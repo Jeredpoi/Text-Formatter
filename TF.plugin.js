@@ -1,7 +1,7 @@
 /**
  * @name TFExtra
  * @description Встраивает подчёркивание, цитату, код-блок, сброс ANSI и 7 ANSI-цветов прямо в нативный попап форматирования Discord.
- * @version 4.9.0
+ * @version 5.0.0
  * @author TF / Zerebos base
  */
 
@@ -26,47 +26,72 @@
 
 const { Patcher, DOM, ReactUtils, Webpack, Logger, Data } = BdApi;
 const PLUGIN_NAME = "TFExtra";
-const VERSION     = "4.9.0";
+const VERSION     = "5.0.0";
 
 // Попап форматирования Discord при выделении текста использует класс buttons_XXXXX
 // Но такой же класс есть и в панели снизу — различаем по наличию нативных кнопок Discord внутри
 const TOOLBAR_SEL = '[class*="buttons_"]';
 
 const ANSI = {
-    ansiRed:     ["```ansi\n\u001b[1;31m", "\u001b[0m\n```"],
-    ansiGreen:   ["```ansi\n\u001b[1;32m", "\u001b[0m\n```"],
-    ansiYellow:  ["```ansi\n\u001b[1;33m", "\u001b[0m\n```"],
-    ansiBlue:    ["```ansi\n\u001b[1;34m", "\u001b[0m\n```"],
-    ansiMagenta: ["```ansi\n\u001b[1;35m", "\u001b[0m\n```"],
-    ansiCyan:    ["```ansi\n\u001b[1;36m", "\u001b[0m\n```"],
-    ansiWhite:   ["```ansi\n\u001b[1;37m", "\u001b[0m\n```"],
+    // Foreground colors
+    ansiRed:       ["```ansi\n\u001b[1;31m", "\u001b[0m\n```"],
+    ansiGreen:     ["```ansi\n\u001b[1;32m", "\u001b[0m\n```"],
+    ansiYellow:    ["```ansi\n\u001b[1;33m", "\u001b[0m\n```"],
+    ansiBlue:      ["```ansi\n\u001b[1;34m", "\u001b[0m\n```"],
+    ansiMagenta:   ["```ansi\n\u001b[1;35m", "\u001b[0m\n```"],
+    ansiCyan:      ["```ansi\n\u001b[1;36m", "\u001b[0m\n```"],
+    ansiWhite:     ["```ansi\n\u001b[1;37m", "\u001b[0m\n```"],
+    // Background colors
+    ansiBgRed:     ["```ansi\n\u001b[41m", "\u001b[0m\n```"],
+    ansiBgGreen:   ["```ansi\n\u001b[42m", "\u001b[0m\n```"],
+    ansiBgYellow:  ["```ansi\n\u001b[43m", "\u001b[0m\n```"],
+    ansiBgBlue:    ["```ansi\n\u001b[44m", "\u001b[0m\n```"],
+    ansiBgMagenta: ["```ansi\n\u001b[45m", "\u001b[0m\n```"],
+    ansiBgCyan:    ["```ansi\n\u001b[46m", "\u001b[0m\n```"],
+    ansiBgWhite:   ["```ansi\n\u001b[47m", "\u001b[0m\n```"],
 };
-const ANSI_RE = () => /```ansi\n\u001b\[\d+;\d+m([\s\S]*?)\u001b\[0m\n```/g;
+
+// FIX: обновлён regex — теперь матчит как fg (1;31) так и bg (41) коды
+const ANSI_RE = () => /```ansi\n\u001b\[(?:\d+;)*\d+m([\s\S]*?)\u001b\[0m\n```/g;
 
 const BTNS = [
-    { id:"boldX",      type:"wrap",  wrap:["**","**"],       label:"B",       labelStyle:"font-weight:700;font-size:13px;",                                               title:"Жирный",        hotkey:null, defaultVisible:true },
-    { id:"italicX",    type:"wrap",  wrap:["*","*"],         label:"I",       labelStyle:"font-style:italic;font-size:13px;",                                              title:"Курсив",        hotkey:null, defaultVisible:true },
-    { id:"strikeX",    type:"wrap",  wrap:["~~","~~"],       label:"S",       labelStyle:"text-decoration:line-through;font-size:13px;",                                   title:"Зачёркнутый",   hotkey:null, defaultVisible:true },
-    { id:"spoilerX",   type:"wrap",  wrap:["||","||"],       label:"◍",       labelStyle:"font-size:13px;font-weight:700;",                                                title:"Спойлер",       hotkey:null, defaultVisible:true },
-    { id:"codeX",      type:"wrap",  wrap:["`","`"],         label:"`",       labelStyle:"font-family:monospace;font-weight:700;font-size:12px;",                          title:"Код",           hotkey:null, defaultVisible:true },
-    { id:"underline",  type:"wrap",  wrap:["__","__"],       label:"U\u0332", labelStyle:"text-decoration:underline;font-weight:700;font-size:13px;",                   title:"Подчёркивание", hotkey:{ctrl:true,shift:true,key:"U"}, defaultVisible:true },
-    { id:"quote",      type:"quote",                         label:"\u275d",  labelStyle:"font-size:15px;line-height:1;",                                                title:"Цитата",        hotkey:{ctrl:true,shift:true,key:"."}, defaultVisible:true },
-    { id:"quoteMulti", type:"lineprefix", prefix:">>> ",     label:">>>",     labelStyle:"font-size:11px;font-weight:700;",                                                title:"Многострочная цитата", hotkey:null, defaultVisible:true },
-    { id:"h1",         type:"lineprefix", prefix:"# ",       label:"H1",      labelStyle:"font-size:11px;font-weight:700;",                                                title:"Заголовок 1",   hotkey:null, defaultVisible:true },
-    { id:"h2",         type:"lineprefix", prefix:"## ",      label:"H2",      labelStyle:"font-size:11px;font-weight:700;",                                                title:"Заголовок 2",   hotkey:null, defaultVisible:true },
-    { id:"h3",         type:"lineprefix", prefix:"### ",     label:"H3",      labelStyle:"font-size:11px;font-weight:700;",                                                title:"Заголовок 3",   hotkey:null, defaultVisible:true },
-    { id:"smallText",  type:"lineprefix", prefix:"-# ",      label:"-#",      labelStyle:"font-size:11px;font-weight:700;",                                                title:"Маленький текст", hotkey:null, defaultVisible:true },
-    { id:"list",       type:"lineprefix", prefix:"- ",       label:"•",       labelStyle:"font-size:14px;font-weight:700;",                                                title:"Список",        hotkey:null, defaultVisible:true },
-    { id:"numList",    type:"numbered",                      label:"1.",      labelStyle:"font-size:12px;font-weight:700;",                                                title:"Нумерованный список", hotkey:null, defaultVisible:true },
-    { id:"codeblock",  type:"wrap",  wrap:["```\n","\n```"], label:"</>",     labelStyle:"font-family:monospace;font-weight:700;font-size:11px;letter-spacing:-0.5px;", title:"Код-блок",      hotkey:{ctrl:true,shift:true,key:"K"}, defaultVisible:true },
-    { id:"ansiRed",     type:"ansi", label:"Кр", labelStyle:"color:#ed4245;font-weight:700;font-size:12px;", title:"Красный",   hotkey:null, defaultVisible:true },
-    { id:"ansiGreen",   type:"ansi", label:"Зл", labelStyle:"color:#57f287;font-weight:700;font-size:12px;", title:"Зелёный",   hotkey:null, defaultVisible:true },
-    { id:"ansiYellow",  type:"ansi", label:"Жл", labelStyle:"color:#faa61a;font-weight:700;font-size:12px;", title:"Жёлтый",    hotkey:null, defaultVisible:true },
-    { id:"ansiBlue",    type:"ansi", label:"Сн", labelStyle:"color:#5865f2;font-weight:700;font-size:12px;", title:"Синий",     hotkey:null, defaultVisible:true },
-    { id:"ansiMagenta", type:"ansi", label:"Пр", labelStyle:"color:#c678dd;font-weight:700;font-size:12px;", title:"Пурпурный", hotkey:null, defaultVisible:true },
-    { id:"ansiCyan",    type:"ansi", label:"Цн", labelStyle:"color:#56b6c2;font-weight:700;font-size:12px;", title:"Циан",      hotkey:null, defaultVisible:true },
-    { id:"ansiWhite",   type:"ansi", label:"Бл", labelStyle:"color:#dce0e8;font-weight:700;font-size:12px;", title:"Белый",     hotkey:null, defaultVisible:true },
-    { id:"ansiReset",   type:"reset",label:"\u2715", labelStyle:"font-size:12px;font-weight:700;opacity:0.7;", title:"Убрать цвет", hotkey:null, defaultVisible:true },
+    // ── Инлайн-форматирование ──────────────────────────────────────────────
+    { id:"boldX",      type:"wrap",  wrap:["**","**"],       label:"B",       labelStyle:"font-weight:700;font-size:13px;",                                               title:"Жирный",                  hotkey:null,                             defaultVisible:true },
+    { id:"italicX",    type:"wrap",  wrap:["*","*"],         label:"I",       labelStyle:"font-style:italic;font-size:13px;",                                              title:"Курсив",                  hotkey:null,                             defaultVisible:true },
+    { id:"strikeX",    type:"wrap",  wrap:["~~","~~"],       label:"S",       labelStyle:"text-decoration:line-through;font-size:13px;",                                   title:"Зачёркнутый",             hotkey:null,                             defaultVisible:true },
+    { id:"spoilerX",   type:"wrap",  wrap:["||","||"],       label:"◍",       labelStyle:"font-size:13px;font-weight:700;",                                                title:"Спойлер",                 hotkey:null,                             defaultVisible:true },
+    { id:"codeX",      type:"wrap",  wrap:["`","`"],         label:"`",       labelStyle:"font-family:monospace;font-weight:700;font-size:12px;",                          title:"Код",                     hotkey:null,                             defaultVisible:true },
+    { id:"underline",  type:"wrap",  wrap:["__","__"],       label:"U\u0332", labelStyle:"text-decoration:underline;font-weight:700;font-size:13px;",                     title:"Подчёркивание",           hotkey:{ctrl:true,shift:true,key:"U"},   defaultVisible:true },
+    // ── Блочное форматирование ─────────────────────────────────────────────
+    { id:"quote",      type:"quote",                         label:"\u275d",  labelStyle:"font-size:15px;line-height:1;",                                                  title:"Цитата",                  hotkey:{ctrl:true,shift:true,key:"."},   defaultVisible:true },
+    { id:"quoteMulti", type:"lineprefix", prefix:">>> ",     label:">>>",     labelStyle:"font-size:11px;font-weight:700;",                                                title:"Многострочная цитата",    hotkey:null,                             defaultVisible:true },
+    { id:"h1",         type:"lineprefix", prefix:"# ",       label:"H1",      labelStyle:"font-size:11px;font-weight:700;",                                                title:"Заголовок 1",             hotkey:{ctrl:true,shift:true,key:"1"},   defaultVisible:true },
+    { id:"h2",         type:"lineprefix", prefix:"## ",      label:"H2",      labelStyle:"font-size:11px;font-weight:700;",                                                title:"Заголовок 2",             hotkey:{ctrl:true,shift:true,key:"2"},   defaultVisible:true },
+    { id:"h3",         type:"lineprefix", prefix:"### ",     label:"H3",      labelStyle:"font-size:11px;font-weight:700;",                                                title:"Заголовок 3",             hotkey:{ctrl:true,shift:true,key:"3"},   defaultVisible:true },
+    { id:"smallText",  type:"lineprefix", prefix:"-# ",      label:"-#",      labelStyle:"font-size:11px;font-weight:700;",                                                title:"Маленький текст",         hotkey:null,                             defaultVisible:true },
+    { id:"list",       type:"lineprefix", prefix:"- ",       label:"•",       labelStyle:"font-size:14px;font-weight:700;",                                                title:"Список",                  hotkey:null,                             defaultVisible:true },
+    { id:"numList",    type:"numbered",                      label:"1.",      labelStyle:"font-size:12px;font-weight:700;",                                                title:"Нумерованный список",     hotkey:null,                             defaultVisible:true },
+    { id:"codeblock",  type:"wrap",  wrap:["```\n","\n```"], label:"</>",     labelStyle:"font-family:monospace;font-weight:700;font-size:11px;letter-spacing:-0.5px;",   title:"Код-блок",                hotkey:{ctrl:true,shift:true,key:"K"},   defaultVisible:true },
+    // ── Утилиты ────────────────────────────────────────────────────────────
+    { id:"hyperlink",  type:"link",                          label:"🔗",      labelStyle:"font-size:13px;",                                                                title:"Гиперссылка",             hotkey:{ctrl:true,shift:true,key:"L"},   defaultVisible:true },
+    { id:"clearAll",   type:"clearall",                      label:"✕fmt",    labelStyle:"font-size:10px;font-weight:700;opacity:0.8;",                                    title:"Очистить форматирование", hotkey:null,                             defaultVisible:true },
+    // ── ANSI цвета текста ──────────────────────────────────────────────────
+    { id:"ansiRed",     type:"ansi", label:"Кр",  labelStyle:"color:#ed4245;font-weight:700;font-size:12px;",                                                              title:"Красный",                 hotkey:null, defaultVisible:true },
+    { id:"ansiGreen",   type:"ansi", label:"Зл",  labelStyle:"color:#57f287;font-weight:700;font-size:12px;",                                                              title:"Зелёный",                 hotkey:null, defaultVisible:true },
+    { id:"ansiYellow",  type:"ansi", label:"Жл",  labelStyle:"color:#faa61a;font-weight:700;font-size:12px;",                                                              title:"Жёлтый",                  hotkey:null, defaultVisible:true },
+    { id:"ansiBlue",    type:"ansi", label:"Сн",  labelStyle:"color:#5865f2;font-weight:700;font-size:12px;",                                                              title:"Синий",                   hotkey:null, defaultVisible:true },
+    { id:"ansiMagenta", type:"ansi", label:"Пр",  labelStyle:"color:#c678dd;font-weight:700;font-size:12px;",                                                              title:"Пурпурный",               hotkey:null, defaultVisible:true },
+    { id:"ansiCyan",    type:"ansi", label:"Цн",  labelStyle:"color:#56b6c2;font-weight:700;font-size:12px;",                                                              title:"Циан",                    hotkey:null, defaultVisible:true },
+    { id:"ansiWhite",   type:"ansi", label:"Бл",  labelStyle:"color:#dce0e8;font-weight:700;font-size:12px;",                                                              title:"Белый",                   hotkey:null, defaultVisible:true },
+    { id:"ansiReset",   type:"reset",label:"\u2715", labelStyle:"font-size:12px;font-weight:700;opacity:0.7;",                                                             title:"Убрать ANSI цвет",        hotkey:null, defaultVisible:true },
+    // ── ANSI фон ───────────────────────────────────────────────────────────
+    { id:"ansiBgRed",     type:"ansi", label:"фКр", labelStyle:"background:#c0392b;color:#fff;font-weight:700;font-size:10px;border-radius:3px;padding:0 2px;",           title:"Фон: Красный",            hotkey:null, defaultVisible:true },
+    { id:"ansiBgGreen",   type:"ansi", label:"фЗл", labelStyle:"background:#27ae60;color:#fff;font-weight:700;font-size:10px;border-radius:3px;padding:0 2px;",           title:"Фон: Зелёный",            hotkey:null, defaultVisible:true },
+    { id:"ansiBgYellow",  type:"ansi", label:"фЖл", labelStyle:"background:#e67e22;color:#fff;font-weight:700;font-size:10px;border-radius:3px;padding:0 2px;",           title:"Фон: Жёлтый",             hotkey:null, defaultVisible:true },
+    { id:"ansiBgBlue",    type:"ansi", label:"фСн", labelStyle:"background:#5865f2;color:#fff;font-weight:700;font-size:10px;border-radius:3px;padding:0 2px;",           title:"Фон: Синий",              hotkey:null, defaultVisible:true },
+    { id:"ansiBgMagenta", type:"ansi", label:"фПр", labelStyle:"background:#8e44ad;color:#fff;font-weight:700;font-size:10px;border-radius:3px;padding:0 2px;",           title:"Фон: Пурпурный",          hotkey:null, defaultVisible:true },
+    { id:"ansiBgCyan",    type:"ansi", label:"фЦн", labelStyle:"background:#16a085;color:#fff;font-weight:700;font-size:10px;border-radius:3px;padding:0 2px;",           title:"Фон: Циан",               hotkey:null, defaultVisible:true },
+    { id:"ansiBgWhite",   type:"ansi", label:"фБл", labelStyle:"background:#dce0e8;color:#000;font-weight:700;font-size:10px;border-radius:3px;padding:0 2px;",           title:"Фон: Белый",              hotkey:null, defaultVisible:true },
 ];
 
 const CSS = `
@@ -143,6 +168,20 @@ const CSS = `
 .tfx-tog input:checked + .tfx-tog-t { background:#5865f2; }
 .tfx-tog-t::after { content:''; position:absolute; width:14px; height:14px; border-radius:50%; background:#fff; top:3px; left:3px; transition:transform 150ms ease; box-shadow:0 1px 3px rgba(0,0,0,.35); }
 .tfx-tog input:checked + .tfx-tog-t::after { transform:translateX(16px); }
+.tfx-link-inp {
+    width: 100%;
+    padding: 8px 10px;
+    margin-top: 8px;
+    background: var(--input-background, rgba(0,0,0,0.3));
+    border: 1px solid var(--input-border, rgba(255,255,255,0.15));
+    border-radius: 4px;
+    color: var(--text-normal, #fff);
+    font-size: 14px;
+    box-sizing: border-box;
+    outline: none;
+    transition: border-color 150ms;
+}
+.tfx-link-inp:focus { border-color: #5865f2; }
 `;
 
 function defaultSettings() {
@@ -150,9 +189,11 @@ function defaultSettings() {
     for (const b of BTNS) vis[b.id] = b.defaultVisible;
     return { visible: vis };
 }
+
+// FIX: добавлена поддержка Alt в подсказке горячей клавиши
 function hkLabel(hk) {
     if (!hk) return "";
-    return [hk.ctrl && "Ctrl", hk.shift && "Shift", hk.key].filter(Boolean).join("+");
+    return [hk.ctrl && "Ctrl", hk.alt && "Alt", hk.shift && "Shift", hk.key].filter(Boolean).join("+");
 }
 
 module.exports = class TFExtra {
@@ -299,7 +340,6 @@ module.exports = class TFExtra {
         if (el.children.length < 2) return skip("children count");
 
         // Главная проверка: внутри должны быть нативные кнопки Discord
-        // У них есть aria-label типа "Bold", "Italic" или класс содержащий "button"
         const hasNativeBtn = el.querySelector('[aria-label]') !== null
             || el.querySelector('[class*="button_"]') !== null
             || el.querySelector('[class*="Button_"]') !== null;
@@ -309,9 +349,6 @@ module.exports = class TFExtra {
         const selected = (sel?.toString() ?? "").trim();
         if (!selected) return skip("empty selection");
 
-        // Не вставляться в панель снизу (там нет aria-label на кнопках форматирования)
-        // Дополнительно проверяем — попап форматирования появляется над текстом,
-        // поэтому он должен быть в popover/overlay контейнере
         Logger.info(PLUGIN_NAME, `✅ INJECTING: ${cls} ${Math.round(r.width)}x${Math.round(r.height)} btns=${btnCount}`);
         this._injected.add(el);
         this._injectIntoDom(el);
@@ -386,9 +423,12 @@ module.exports = class TFExtra {
             if (el.classList.contains("tfx-hidden")) hidden++;
             else shown++;
         });
-        const any = BTNS.some(b => this.settings.visible[b.id] !== false);
-        host.querySelectorAll(".tfx-sep").forEach(s => { s.style.display = any ? "" : "none"; });
-        Logger.info(PLUGIN_NAME, `VIS host=${(host.className || "").toString().split(" ")[0] || "body"} shown=${shown} hidden=${hidden} any=${any}`);
+        // FIX: проверяем видимость кнопок именно в текущем контейнере, а не глобально
+        const anyVisible = host === document.body
+            ? BTNS.some(b => this.settings.visible[b.id] !== false)
+            : host.querySelectorAll(".tfx-btn:not(.tfx-hidden)").length > 0;
+        host.querySelectorAll(".tfx-sep").forEach(s => { s.style.display = anyVisible ? "" : "none"; });
+        Logger.info(PLUGIN_NAME, `VIS host=${(host.className || "").toString().split(" ")[0] || "body"} shown=${shown} hidden=${hidden} any=${anyVisible}`);
     }
 
     _registerHotkeys() {
@@ -400,7 +440,8 @@ module.exports = class TFExtra {
             for (const btn of BTNS) {
                 if (!btn.hotkey || this.settings.visible[btn.id] === false) continue;
                 const hk = btn.hotkey;
-                if (!!hk.ctrl !== e.ctrlKey || !!hk.shift !== e.shiftKey) continue;
+                // FIX: добавлена проверка altKey для поддержки горячих клавиш с Alt
+                if (!!hk.ctrl !== e.ctrlKey || !!hk.shift !== e.shiftKey || !!hk.alt !== e.altKey) continue;
                 if (e.key.toUpperCase() !== hk.key.toUpperCase()) continue;
                 e.preventDefault(); e.stopPropagation();
                 this._saveSel(); this._exec(btn.id); return;
@@ -413,12 +454,14 @@ module.exports = class TFExtra {
         const btn = BTNS.find(b => b.id === id);
         if (!btn) return;
         switch (btn.type) {
-            case "ansi":  this._wrap(...ANSI[id]); break;
-            case "wrap":  this._wrap(...btn.wrap); break;
-            case "quote": this._quote();           break;
-            case "reset": this._reset();           break;
+            case "ansi":    this._wrap(...ANSI[id]); break;
+            case "wrap":    this._wrap(...btn.wrap); break;
+            case "quote":   this._quote();           break;
+            case "reset":   this._reset();           break;
+            case "link":    this._link();            break;
+            case "clearall":this._clearAll();        break;
             case "lineprefix": this._linePrefix(btn.prefix); break;
-            case "numbered": this._numbered(); break;
+            case "numbered":   this._numbered();    break;
         }
         setTimeout(() => {
             document.querySelectorAll(TOOLBAR_SEL).forEach(c => {
@@ -427,21 +470,28 @@ module.exports = class TFExtra {
         }, 0);
     }
 
+    // FIX: цитата теперь переключается (снимается повторным нажатием)
     _quote() {
         this._restoreSel();
         const ta = this._ta(); if (!ta) return;
-        const q = (t) => t.split("\n").map(l => "> " + l).join("\n");
-        const doneSlate = this._replaceOnSlate((selected) => q(selected));
+        const toggle = (t) => {
+            const lines = t.split("\n");
+            const all = lines.every(l => l.startsWith("> "));
+            return all
+                ? lines.map(l => l.slice(2)).join("\n")
+                : lines.map(l => "> " + l).join("\n");
+        };
+        const doneSlate = this._replaceOnSlate((selected) => toggle(selected));
         if (doneSlate) return;
         if (ta.tagName === "TEXTAREA") {
             const s = this._snap?.start ?? ta.selectionStart;
             const e = this._snap?.end   ?? ta.selectionEnd;
             if (s === e) return;
             ta.focus(); ta.setSelectionRange(s, e);
-            document.execCommand("insertText", false, q(ta.value.slice(s, e)));
+            document.execCommand("insertText", false, toggle(ta.value.slice(s, e)));
             return;
         }
-        this._replaceRangeText((selected) => q(selected));
+        this._replaceRangeText((selected) => toggle(selected));
     }
 
     _reset() {
@@ -457,6 +507,125 @@ module.exports = class TFExtra {
             const stripped = strip(ta.value.slice(s, e));
             ta.focus(); ta.setSelectionRange(s, e);
             document.execCommand("insertText", false, stripped);
+            return;
+        }
+        this._replaceRangeText((selected) => strip(selected));
+    }
+
+    // НОВОЕ: гиперссылка [текст](url)
+    _link() {
+        this._restoreSel();
+        const ta = this._ta(); if (!ta) return;
+
+        // Сохраняем выделенный текст и состояние ДО открытия модала
+        let selectedText = "";
+        let slateState = null;
+        let snapState = null;
+
+        if (ta.tagName !== "TEXTAREA") {
+            const sn = ReactUtils.getOwnerInstance(ta);
+            const sl = sn?.ref?.current?.getSlateEditor();
+            const info = this._slateInfo(sl);
+            if (info) {
+                selectedText = info.text.slice(info.start, info.end);
+                slateState = { sl, sn, info };
+            } else {
+                selectedText = this._getSelectedText();
+            }
+        } else {
+            const s = this._snap?.start ?? ta.selectionStart;
+            const e = this._snap?.end   ?? ta.selectionEnd;
+            if (s !== e) {
+                selectedText = ta.value.slice(s, e);
+                snapState = { start: s, end: e };
+            }
+        }
+
+        if (!selectedText) return;
+
+        const inp = document.createElement("input");
+        inp.type = "text";
+        inp.placeholder = "https://...";
+        inp.className = "tfx-link-inp";
+
+        const wrap = document.createElement("div");
+        const label = document.createElement("span");
+        label.textContent = "URL ссылки:";
+        label.style.cssText = "font-size:13px;color:var(--text-muted,#aaa);display:block;";
+        wrap.appendChild(label);
+        wrap.appendChild(inp);
+
+        BdApi.UI.showConfirmationModal("Добавить гиперссылку", wrap, {
+            confirmText: "Вставить",
+            cancelText: "Отмена",
+            onConfirm: () => {
+                const url = inp.value.trim();
+                if (!url) return;
+                const rep = `[${selectedText}](${url})`;
+                if (slateState) {
+                    const { sl, sn, info } = slateState;
+                    this._put(sl, info.path, info.start, info.end, rep, info.start, info.start + rep.length);
+                    sn?.focus?.();
+                } else if (snapState) {
+                    ta.focus();
+                    ta.setSelectionRange(snapState.start, snapState.end);
+                    document.execCommand("insertText", false, rep);
+                } else {
+                    document.execCommand("insertText", false, rep);
+                }
+            }
+        });
+        setTimeout(() => inp.focus(), 150);
+    }
+
+    // НОВОЕ: очистка всего форматирования (markdown + ANSI)
+    _clearAll() {
+        this._restoreSel();
+        const ta = this._ta(); if (!ta) return;
+        const strip = (s) => {
+            let r = s;
+            // ANSI-блоки
+            r = r.replace(ANSI_RE(), "$1");
+            // Код-блоки (с языком и без)
+            r = r.replace(/```\w*\n?([\s\S]*?)\n?```/g, "$1");
+            // Инлайн-код
+            r = r.replace(/`([^`\n]+)`/g, "$1");
+            // Жирный+курсив
+            r = r.replace(/\*\*\*([\s\S]+?)\*\*\*/g, "$1");
+            // Жирный
+            r = r.replace(/\*\*([\s\S]+?)\*\*/g, "$1");
+            // Курсив *
+            r = r.replace(/\*([\s\S]+?)\*/g, "$1");
+            // Подчёркивание
+            r = r.replace(/__([\s\S]+?)__/g, "$1");
+            // Курсив _
+            r = r.replace(/_([\s\S]+?)_/g, "$1");
+            // Зачёркнутый
+            r = r.replace(/~~([\s\S]+?)~~/g, "$1");
+            // Спойлер
+            r = r.replace(/\|\|([\s\S]+?)\|\|/g, "$1");
+            // Многострочная цитата
+            r = r.replace(/^>>> /gm, "");
+            // Одиночная цитата
+            r = r.replace(/^> /gm, "");
+            // Заголовки H1-H3
+            r = r.replace(/^#{1,3} /gm, "");
+            // Маленький текст
+            r = r.replace(/^-# /gm, "");
+            // Список
+            r = r.replace(/^- /gm, "");
+            // Нумерованный список
+            r = r.replace(/^\d+\. /gm, "");
+            return r;
+        };
+        const doneSlate = this._replaceOnSlate((selected) => strip(selected));
+        if (doneSlate) return;
+        if (ta.tagName === "TEXTAREA") {
+            const s = this._snap?.start ?? ta.selectionStart;
+            const e = this._snap?.end   ?? ta.selectionEnd;
+            if (s === e) return;
+            ta.focus(); ta.setSelectionRange(s, e);
+            document.execCommand("insertText", false, strip(ta.value.slice(s, e)));
             return;
         }
         this._replaceRangeText((selected) => strip(selected));
@@ -519,13 +688,19 @@ module.exports = class TFExtra {
         this._replaceRangeText(toggle);
     }
 
+    // FIX: нумерованный список корректно обрабатывает пустые строки
     _numbered() {
         this._restoreSel();
         const ta = this._ta(); if (!ta) return;
         const toggle = (txt) => {
             const lines = txt.split("\n");
-            const all = lines.every(l => /^\d+\.\s/.test(l));
-            return all ? lines.map(l => l.replace(/^\d+\.\s/, "")).join("\n") : lines.map((l, i) => `${i + 1}. ${l}`).join("\n");
+            const nonEmpty = lines.filter(l => l.trim() !== "");
+            const all = nonEmpty.length > 0 && nonEmpty.every(l => /^\d+\.\s/.test(l));
+            if (all) {
+                return lines.map(l => l.replace(/^\d+\.\s/, "")).join("\n");
+            }
+            let counter = 1;
+            return lines.map(l => l.trim() === "" ? l : `${counter++}. ${l}`).join("\n");
         };
         const doneSlate = this._replaceOnSlate((selected) => toggle(selected));
         if (doneSlate) return;
@@ -550,11 +725,13 @@ module.exports = class TFExtra {
             const id = el.dataset.tfxId;
             const btn = BTNS.find(b => b.id === id); if (!btn) return;
             let active = false;
-            if (btn.type === "wrap")  active = this._isActive(ta, ...btn.wrap);
-            if (btn.type === "ansi")  active = this._isActive(ta, ...ANSI[id]);
-            if (btn.type === "reset") active = this._hasAnsi(ta);
+            if (btn.type === "wrap")       active = this._isActive(ta, ...btn.wrap);
+            if (btn.type === "ansi")       active = this._isActive(ta, ...ANSI[id]);
+            if (btn.type === "reset")      active = this._hasAnsi(ta);
             if (btn.type === "lineprefix") active = this._isPrefixActive(ta, btn.prefix);
-            if (btn.type === "numbered") active = this._isNumberedActive(ta);
+            if (btn.type === "numbered")   active = this._isNumberedActive(ta);
+            // FIX: кнопка цитаты теперь корректно подсвечивается активной
+            if (btn.type === "quote")      active = this._isPrefixActive(ta, "> ");
             el.classList.toggle("tfx-active", active);
         });
     }
@@ -582,7 +759,9 @@ module.exports = class TFExtra {
             sel = this._getSelectedText();
         }
         if (!sel) return false;
-        return sel.split("\n").every(l => /^\d+\.\s/.test(l));
+        // FIX: пустые строки игнорируются при проверке активности
+        const nonEmpty = sel.split("\n").filter(l => l.trim() !== "");
+        return nonEmpty.length > 0 && nonEmpty.every(l => /^\d+\.\s/.test(l));
     }
 
     _isActive(ta, L, R) {
@@ -609,6 +788,7 @@ module.exports = class TFExtra {
         return ANSI_RE().test(sel);
     }
 
+    // FIX: убран хардкод класса "textArea_bdf0de" — теперь используется паттерн-поиск как запасной вариант
     _ta() {
         const ae = document.activeElement;
         if (ae?.matches?.('div[contenteditable="true"]')) return ae;
@@ -622,8 +802,11 @@ module.exports = class TFExtra {
         }
 
         const cls = Webpack.getByKeys("channelTextArea", "textArea");
-        const key = (cls?.textArea ?? "textArea_bdf0de").split(" ")[0];
-        const all = [...document.querySelectorAll(`.${key}`)];
+        const key = cls?.textArea?.split(" ")[0];
+        const all = key
+            ? [...document.querySelectorAll(`.${key}`)]
+            : [...document.querySelectorAll('[class*="textArea_"]')];
+
         if (sel?.anchorNode) {
             const bySel = all.find(el => el.contains(sel.anchorNode));
             if (bySel) return bySel;
