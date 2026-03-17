@@ -1,7 +1,7 @@
 /**
  * @name TFExtra
- * @description Встраивает подчёркивание, цитату, код-блок, сброс ANSI и 7 ANSI-цветов прямо в нативный попап форматирования Discord.
- * @version 5.0.0
+ * @description Встраивает ANSI-цвета (текст и фон), заголовки H1–H3, подчёркивание, списки, код-блок и другое кастомное форматирование в попап Discord.
+ * @version 5.1.0
  * @author TF / Zerebos base
  */
 
@@ -26,7 +26,7 @@
 
 const { Patcher, DOM, ReactUtils, Webpack, Logger, Data } = BdApi;
 const PLUGIN_NAME = "TFExtra";
-const VERSION     = "5.0.0";
+const VERSION     = "5.1.0";
 
 // Попап форматирования Discord при выделении текста использует класс buttons_XXXXX
 // Но такой же класс есть и в панели снизу — различаем по наличию нативных кнопок Discord внутри
@@ -68,23 +68,23 @@ const BTNS = [
     // ── Утилиты ────────────────────────────────────────────────────────────
     { id:"hyperlink",  type:"link",                          label:"🔗",      labelStyle:"font-size:13px;",                                                                title:"Гиперссылка",             hotkey:{ctrl:true,shift:true,key:"L"},   defaultVisible:true },
     { id:"clearAll",   type:"clearall",                      label:"✕fmt",    labelStyle:"font-size:10px;font-weight:700;opacity:0.8;",                                    title:"Очистить форматирование", hotkey:null,                             defaultVisible:true },
-    // ── ANSI цвета текста ──────────────────────────────────────────────────
-    { id:"ansiRed",     type:"ansi", label:"Кр",  labelStyle:"color:#ed4245;font-weight:700;font-size:12px;",                                                              title:"Красный",                 hotkey:null, defaultVisible:true },
-    { id:"ansiGreen",   type:"ansi", label:"Зл",  labelStyle:"color:#57f287;font-weight:700;font-size:12px;",                                                              title:"Зелёный",                 hotkey:null, defaultVisible:true },
-    { id:"ansiYellow",  type:"ansi", label:"Жл",  labelStyle:"color:#faa61a;font-weight:700;font-size:12px;",                                                              title:"Жёлтый",                  hotkey:null, defaultVisible:true },
-    { id:"ansiBlue",    type:"ansi", label:"Сн",  labelStyle:"color:#5865f2;font-weight:700;font-size:12px;",                                                              title:"Синий",                   hotkey:null, defaultVisible:true },
-    { id:"ansiMagenta", type:"ansi", label:"Пр",  labelStyle:"color:#c678dd;font-weight:700;font-size:12px;",                                                              title:"Пурпурный",               hotkey:null, defaultVisible:true },
-    { id:"ansiCyan",    type:"ansi", label:"Цн",  labelStyle:"color:#56b6c2;font-weight:700;font-size:12px;",                                                              title:"Циан",                    hotkey:null, defaultVisible:true },
-    { id:"ansiWhite",   type:"ansi", label:"Бл",  labelStyle:"color:#dce0e8;font-weight:700;font-size:12px;",                                                              title:"Белый",                   hotkey:null, defaultVisible:true },
-    { id:"ansiReset",   type:"reset",label:"\u2715", labelStyle:"font-size:12px;font-weight:700;opacity:0.7;",                                                             title:"Убрать ANSI цвет",        hotkey:null, defaultVisible:true },
-    // ── ANSI фон ───────────────────────────────────────────────────────────
-    { id:"ansiBgRed",     type:"ansi", label:"фКр", labelStyle:"background:#c0392b;color:#fff;font-weight:700;font-size:10px;border-radius:3px;padding:0 2px;",           title:"Фон: Красный",            hotkey:null, defaultVisible:true },
-    { id:"ansiBgGreen",   type:"ansi", label:"фЗл", labelStyle:"background:#27ae60;color:#fff;font-weight:700;font-size:10px;border-radius:3px;padding:0 2px;",           title:"Фон: Зелёный",            hotkey:null, defaultVisible:true },
-    { id:"ansiBgYellow",  type:"ansi", label:"фЖл", labelStyle:"background:#e67e22;color:#fff;font-weight:700;font-size:10px;border-radius:3px;padding:0 2px;",           title:"Фон: Жёлтый",             hotkey:null, defaultVisible:true },
-    { id:"ansiBgBlue",    type:"ansi", label:"фСн", labelStyle:"background:#5865f2;color:#fff;font-weight:700;font-size:10px;border-radius:3px;padding:0 2px;",           title:"Фон: Синий",              hotkey:null, defaultVisible:true },
-    { id:"ansiBgMagenta", type:"ansi", label:"фПр", labelStyle:"background:#8e44ad;color:#fff;font-weight:700;font-size:10px;border-radius:3px;padding:0 2px;",           title:"Фон: Пурпурный",          hotkey:null, defaultVisible:true },
-    { id:"ansiBgCyan",    type:"ansi", label:"фЦн", labelStyle:"background:#16a085;color:#fff;font-weight:700;font-size:10px;border-radius:3px;padding:0 2px;",           title:"Фон: Циан",               hotkey:null, defaultVisible:true },
-    { id:"ansiBgWhite",   type:"ansi", label:"фБл", labelStyle:"background:#dce0e8;color:#000;font-weight:700;font-size:10px;border-radius:3px;padding:0 2px;",           title:"Фон: Белый",              hotkey:null, defaultVisible:true },
+    // ── ANSI цвета текста (круглые свотчи) ────────────────────────────────
+    { id:"ansiRed",     type:"ansi", label:'<span class="tfx-sw" style="background:#ed4245"></span>',                                            title:"Красный",        hotkey:null, defaultVisible:true },
+    { id:"ansiGreen",   type:"ansi", label:'<span class="tfx-sw" style="background:#57f287"></span>',                                            title:"Зелёный",        hotkey:null, defaultVisible:true },
+    { id:"ansiYellow",  type:"ansi", label:'<span class="tfx-sw" style="background:#faa61a"></span>',                                            title:"Жёлтый",         hotkey:null, defaultVisible:true },
+    { id:"ansiBlue",    type:"ansi", label:'<span class="tfx-sw" style="background:#5865f2"></span>',                                            title:"Синий",          hotkey:null, defaultVisible:true },
+    { id:"ansiMagenta", type:"ansi", label:'<span class="tfx-sw" style="background:#c678dd"></span>',                                            title:"Пурпурный",      hotkey:null, defaultVisible:true },
+    { id:"ansiCyan",    type:"ansi", label:'<span class="tfx-sw" style="background:#56b6c2"></span>',                                            title:"Циан",           hotkey:null, defaultVisible:true },
+    { id:"ansiWhite",   type:"ansi", label:'<span class="tfx-sw" style="background:#dce0e8;border-color:rgba(255,255,255,0.45)"></span>',        title:"Белый",          hotkey:null, defaultVisible:true },
+    { id:"ansiReset",   type:"reset",label:"\u2715", labelStyle:"font-size:12px;font-weight:700;opacity:0.7;",                                   title:"Убрать ANSI",    hotkey:null, defaultVisible:true },
+    // ── ANSI фон (квадратные свотчи) ──────────────────────────────────────
+    { id:"ansiBgRed",     type:"ansi", label:'<span class="tfx-sw tfx-sw-sq" style="background:#c0392b"></span>',                                title:"Фон: Красный",   hotkey:null, defaultVisible:true },
+    { id:"ansiBgGreen",   type:"ansi", label:'<span class="tfx-sw tfx-sw-sq" style="background:#27ae60"></span>',                                title:"Фон: Зелёный",   hotkey:null, defaultVisible:true },
+    { id:"ansiBgYellow",  type:"ansi", label:'<span class="tfx-sw tfx-sw-sq" style="background:#e67e22"></span>',                                title:"Фон: Жёлтый",    hotkey:null, defaultVisible:true },
+    { id:"ansiBgBlue",    type:"ansi", label:'<span class="tfx-sw tfx-sw-sq" style="background:#5865f2"></span>',                                title:"Фон: Синий",     hotkey:null, defaultVisible:true },
+    { id:"ansiBgMagenta", type:"ansi", label:'<span class="tfx-sw tfx-sw-sq" style="background:#8e44ad"></span>',                                title:"Фон: Пурпурный", hotkey:null, defaultVisible:true },
+    { id:"ansiBgCyan",    type:"ansi", label:'<span class="tfx-sw tfx-sw-sq" style="background:#16a085"></span>',                                title:"Фон: Циан",      hotkey:null, defaultVisible:true },
+    { id:"ansiBgWhite",   type:"ansi", label:'<span class="tfx-sw tfx-sw-sq" style="background:#dce0e8;border-color:rgba(0,0,0,0.25)"></span>',  title:"Фон: Белый",     hotkey:null, defaultVisible:true },
 ];
 
 const CSS = `
@@ -126,6 +126,17 @@ const CSS = `
 .tfx-btn.tfx-active { background: rgba(88,101,242,0.22); color: var(--text-link, #00b0f4); }
 .tfx-btn.tfx-active:hover { background: rgba(88,101,242,0.35); }
 .tfx-btn.tfx-hidden { display: none !important; }
+.tfx-sw {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    border: 1.5px solid rgba(255,255,255,0.22);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.45);
+    pointer-events: none;
+    flex-shrink: 0;
+}
+.tfx-sw-sq { border-radius: 3px; }
 #tfx-tip {
     position: fixed;
     visibility: hidden;
@@ -385,7 +396,13 @@ module.exports = class TFExtra {
         el.setAttribute("spellcheck", "false");
         el.setAttribute("tabindex", "-1");
         el.draggable = false;
-        el.textContent = btn.label;
+        // Если метка начинается с '<' — вставляем как HTML (цветные свотчи),
+        // иначе как безопасный textContent.
+        if (typeof btn.label === "string" && btn.label.trimStart().startsWith("<")) {
+            el.innerHTML = btn.label;
+        } else {
+            el.textContent = btn.label;
+        }
         if (btn.labelStyle) el.style.cssText += `;${btn.labelStyle}`;
         const hk = btn.hotkey ? hkLabel(btn.hotkey) : null;
         const halt = (e) => {
@@ -449,7 +466,6 @@ module.exports = class TFExtra {
         switch (btn.type) {
             case "ansi":    this._wrap(...ANSI[id]); break;
             case "wrap":    this._wrap(...btn.wrap); break;
-            case "quote":   this._quote();           break;
             case "reset":   this._reset();           break;
             case "link":    this._link();            break;
             case "clearall":this._clearAll();        break;
@@ -461,30 +477,6 @@ module.exports = class TFExtra {
                 if (this._injected.has(c)) this._refreshActive(c);
             });
         }, 0);
-    }
-
-    // FIX: цитата теперь переключается (снимается повторным нажатием)
-    _quote() {
-        this._restoreSel();
-        const ta = this._ta(); if (!ta) return;
-        const toggle = (t) => {
-            const lines = t.split("\n");
-            const all = lines.every(l => l.startsWith("> "));
-            return all
-                ? lines.map(l => l.slice(2)).join("\n")
-                : lines.map(l => "> " + l).join("\n");
-        };
-        const doneSlate = this._replaceOnSlate((selected) => toggle(selected));
-        if (doneSlate) return;
-        if (ta.tagName === "TEXTAREA") {
-            const s = this._snap?.start ?? ta.selectionStart;
-            const e = this._snap?.end   ?? ta.selectionEnd;
-            if (s === e) return;
-            ta.focus(); ta.setSelectionRange(s, e);
-            document.execCommand("insertText", false, toggle(ta.value.slice(s, e)));
-            return;
-        }
-        this._replaceRangeText((selected) => toggle(selected));
     }
 
     _reset() {
@@ -737,8 +729,6 @@ module.exports = class TFExtra {
             if (btn.type === "reset")      active = this._hasAnsi(ta);
             if (btn.type === "lineprefix") active = this._isPrefixActive(ta, btn.prefix);
             if (btn.type === "numbered")   active = this._isNumberedActive(ta);
-            // FIX: кнопка цитаты теперь корректно подсвечивается активной
-            if (btn.type === "quote")      active = this._isPrefixActive(ta, "> ");
             el.classList.toggle("tfx-active", active);
         });
     }
