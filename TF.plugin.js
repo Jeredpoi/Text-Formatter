@@ -1,7 +1,7 @@
 /**
  * @name TFExtra
  * @description Встраивает ANSI-цвета (текст и фон), заголовки H1–H3, подчёркивание, списки, код-блок и другое кастомное форматирование в попап Discord.
- * @version 5.1.3
+ * @version 5.1.4
  * @author TF / Zerebos base
  */
 
@@ -26,7 +26,7 @@
 
 const { Patcher, DOM, ReactUtils, Webpack, Logger, Data } = BdApi;
 const PLUGIN_NAME = "TFExtra";
-const VERSION     = "5.1.3";
+const VERSION     = "5.1.4";
 
 // Попап форматирования Discord при выделении текста использует класс buttons_XXXXX
 // Но такой же класс есть и в панели снизу — различаем по наличию нативных кнопок Discord внутри
@@ -847,6 +847,56 @@ module.exports = class TFExtra {
         return result;
     }
 
+    // Ищет Slate-редактор несколькими способами, т.к. путь sn.ref.current.getSlateEditor()
+    // работает не во всех версиях Discord. Проходим по React-fiber дереву вверх.
+    _getSlate(ta) {
+        if (!ta) return null;
+
+        // Способ 1: стандартный путь через getOwnerInstance
+        try {
+            const sn = ReactUtils.getOwnerInstance(ta);
+            const sl = sn?.ref?.current?.getSlateEditor?.();
+            if (sl) { Logger.info(PLUGIN_NAME, `_getSlate: way1 getOwnerInstance.ref.current.getSlateEditor`); return sl; }
+        } catch (_) {}
+
+        // Способ 2: ходим по React-fiber вверх, ищем getSlateEditor / editorRef / memoizedState.editor
+        try {
+            const fiberKey = Object.keys(ta).find(k => k.startsWith("__reactFiber") || k.startsWith("__reactInternalInstance"));
+            if (!fiberKey) { Logger.info(PLUGIN_NAME, `_getSlate: no fiber key on ta`); return null; }
+            let fiber = ta[fiberKey];
+            let depth = 0;
+            while (fiber && depth < 150) {
+                depth++;
+                // stateNode.getSlateEditor()
+                if (typeof fiber.stateNode?.getSlateEditor === "function") {
+                    const sl = fiber.stateNode.getSlateEditor();
+                    if (sl) { Logger.info(PLUGIN_NAME, `_getSlate: way2a stateNode.getSlateEditor depth=${depth}`); return sl; }
+                }
+                // memoizedProps.editorRef.current (содержит Slate editor)
+                const editorRef = fiber.memoizedProps?.editorRef ?? fiber.pendingProps?.editorRef;
+                if (editorRef?.current?.selection !== undefined && editorRef?.current?.apply) {
+                    Logger.info(PLUGIN_NAME, `_getSlate: way2b memoizedProps.editorRef depth=${depth}`);
+                    return editorRef.current;
+                }
+                // memoizedState: ищем поле editor с .selection и .apply
+                let ms = fiber.memoizedState;
+                while (ms) {
+                    const ed = ms.memoizedState ?? ms.queue?.lastRenderedState;
+                    if (ed?.selection !== undefined && typeof ed?.apply === "function") {
+                        Logger.info(PLUGIN_NAME, `_getSlate: way2c memoizedState.editor depth=${depth}`);
+                        return ed;
+                    }
+                    ms = ms.next;
+                }
+                fiber = fiber.return;
+            }
+            Logger.info(PLUGIN_NAME, `_getSlate: not found after ${depth} fibers`);
+        } catch (err) {
+            Logger.info(PLUGIN_NAME, `_getSlate: fiber walk error: ${err?.message}`);
+        }
+        return null;
+    }
+
     _saveSel() {
         const ta = this._ta();
         if (!ta) { Logger.info(PLUGIN_NAME, `_saveSel: no ta`); return; }
@@ -863,8 +913,7 @@ module.exports = class TFExtra {
         const sel = window.getSelection();
         if (sel && sel.rangeCount > 0 && !sel.isCollapsed) {
             try {
-                const sn = ReactUtils.getOwnerInstance(ta);
-                const sl = sn?.ref?.current?.getSlateEditor?.();
+                const sl = this._getSlate(ta);
                 const slateSel = sl?.selection ? JSON.parse(JSON.stringify(sl.selection)) : null;
                 this._snap = { type: "range", range: sel.getRangeAt(0).cloneRange(), ta, sl, slateSel };
                 Logger.info(PLUGIN_NAME, `_saveSel: range saved sl=${!!sl} slateSel=${!!slateSel} text="${sel.toString().slice(0, 40)}"`);
@@ -942,8 +991,7 @@ module.exports = class TFExtra {
     _replaceOnSlate(transformFn) {
         const ta = this._ta();
         if (!ta || ta.tagName === "TEXTAREA") return false;
-        const sn = ReactUtils.getOwnerInstance(ta);
-        const sl = sn?.ref?.current?.getSlateEditor();
+        const sl = this._getSlate(ta);
         // Приоритет — сохранённый slateSel, т.к. target.focus() в _restoreSel
         // мог сбросить sl.selection через Slate's onFocus до того как мы успели.
         const info = this._slateInfo(sl, this._snap?.slateSel ?? sl?.selection);
@@ -959,7 +1007,7 @@ module.exports = class TFExtra {
         }
         Logger.info(PLUGIN_NAME, `_replaceOnSlate: put path=${JSON.stringify(info.path)} "${selected.slice(0, 30)}" → "${rep.slice(0, 30)}"`);
         this._put(sl, info.path, info.start, info.end, rep, info.start, info.start + rep.length);
-        sn?.focus?.();
+        ta.focus();
         return true;
     }
 
