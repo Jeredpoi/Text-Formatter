@@ -56,15 +56,8 @@ const ANSI_RE = () => /```ansi\n\u001b\[(?:\d+;)*\d+m([\s\S]*?)\u001b\[0m\n```/g
 
 const BTNS = [
     // ── Инлайн-форматирование ──────────────────────────────────────────────
-    { id:"boldX",      type:"wrap",  wrap:["**","**"],       label:"B",       labelStyle:"font-weight:700;font-size:13px;",                                               title:"Жирный",                  hotkey:null,                             defaultVisible:true },
-    { id:"italicX",    type:"wrap",  wrap:["*","*"],         label:"I",       labelStyle:"font-style:italic;font-size:13px;",                                              title:"Курсив",                  hotkey:null,                             defaultVisible:true },
-    { id:"strikeX",    type:"wrap",  wrap:["~~","~~"],       label:"S",       labelStyle:"text-decoration:line-through;font-size:13px;",                                   title:"Зачёркнутый",             hotkey:null,                             defaultVisible:true },
-    { id:"spoilerX",   type:"wrap",  wrap:["||","||"],       label:"◍",       labelStyle:"font-size:13px;font-weight:700;",                                                title:"Спойлер",                 hotkey:null,                             defaultVisible:true },
-    { id:"codeX",      type:"wrap",  wrap:["`","`"],         label:"`",       labelStyle:"font-family:monospace;font-weight:700;font-size:12px;",                          title:"Код",                     hotkey:null,                             defaultVisible:true },
     { id:"underline",  type:"wrap",  wrap:["__","__"],       label:"U\u0332", labelStyle:"text-decoration:underline;font-weight:700;font-size:13px;",                     title:"Подчёркивание",           hotkey:{ctrl:true,shift:true,key:"U"},   defaultVisible:true },
     // ── Блочное форматирование ─────────────────────────────────────────────
-    { id:"quote",      type:"quote",                         label:"\u275d",  labelStyle:"font-size:15px;line-height:1;",                                                  title:"Цитата",                  hotkey:{ctrl:true,shift:true,key:"."},   defaultVisible:true },
-    { id:"quoteMulti", type:"lineprefix", prefix:">>> ",     label:">>>",     labelStyle:"font-size:11px;font-weight:700;",                                                title:"Многострочная цитата",    hotkey:null,                             defaultVisible:true },
     { id:"h1",         type:"lineprefix", prefix:"# ",       label:"H1",      labelStyle:"font-size:11px;font-weight:700;",                                                title:"Заголовок 1",             hotkey:{ctrl:true,shift:true,key:"1"},   defaultVisible:true },
     { id:"h2",         type:"lineprefix", prefix:"## ",      label:"H2",      labelStyle:"font-size:11px;font-weight:700;",                                                title:"Заголовок 2",             hotkey:{ctrl:true,shift:true,key:"2"},   defaultVisible:true },
     { id:"h3",         type:"lineprefix", prefix:"### ",     label:"H3",      labelStyle:"font-size:11px;font-weight:700;",                                                title:"Заголовок 3",             hotkey:{ctrl:true,shift:true,key:"3"},   defaultVisible:true },
@@ -634,34 +627,48 @@ module.exports = class TFExtra {
     _wrap(L, R) {
         this._restoreSel();
         const ta = this._ta(); if (!ta) return;
-        const doneSlate = this._replaceOnSlate((selected) => {
-            if (selected.startsWith(L) && selected.endsWith(R) && selected.length >= L.length + R.length) {
-                return selected.slice(L.length, selected.length - R.length);
+
+        // Slate не поддерживает \n в операции insert_text — каждая новая строка
+        // там отдельный узел. ANSI-обёртки содержат переносы (```ansi\n...\n```),
+        // поэтому для них Slate обходим полностью и работаем через execCommand.
+        const hasNewline = L.includes("\n") || R.includes("\n");
+
+        if (ta.tagName !== "TEXTAREA") {
+            if (!hasNewline) {
+                // Для простых оборачиваний без \n пробуем Slate первым.
+                const doneSlate = this._replaceOnSlate((selected) => {
+                    if (selected.startsWith(L) && selected.endsWith(R) && selected.length >= L.length + R.length) {
+                        return selected.slice(L.length, selected.length - R.length);
+                    }
+                    return L + selected + R;
+                });
+                if (doneSlate) return;
             }
-            return L + selected + R;
-        });
-        if (doneSlate) return;
-        if (ta.tagName === "TEXTAREA") {
-            let s = ta.selectionStart, e = ta.selectionEnd;
-            if (s === e && this._snap?.type === "textarea") { s = this._snap.start; e = this._snap.end; }
-            if (s === e) return;
-            const full = ta.value ?? "";
-            const st = this._wrapState(full, s, e, L, R);
-            let from = s, to = e, rep = full.slice(s, e);
-            if (st === "inner") rep = rep.slice(L.length, rep.length - R.length);
-            else if (st === "outer") { from = s - L.length; to = e + R.length; }
-            else rep = L + rep + R;
-            ta.focus(); ta.setSelectionRange(from, to);
-            document.execCommand("insertText", false, rep);
-            ta.setSelectionRange(from, from + rep.length);
-            this._saveSel(); return;
+            // Fallback (и единственный путь для ANSI): execCommand на DOM-выделении.
+            // _restoreSel() выше уже вернул фокус и восстановил Range.
+            this._replaceRangeText((selected) => {
+                if (selected.startsWith(L) && selected.endsWith(R) && selected.length >= L.length + R.length) {
+                    return selected.slice(L.length, selected.length - R.length);
+                }
+                return L + selected + R;
+            });
+            return;
         }
-        this._replaceRangeText((selected) => {
-            if (selected.startsWith(L) && selected.endsWith(R) && selected.length >= L.length + R.length) {
-                return selected.slice(L.length, selected.length - R.length);
-            }
-            return L + selected + R;
-        });
+
+        // TEXTAREA path
+        let s = ta.selectionStart, e = ta.selectionEnd;
+        if (s === e && this._snap?.type === "textarea") { s = this._snap.start; e = this._snap.end; }
+        if (s === e) return;
+        const full = ta.value ?? "";
+        const st = this._wrapState(full, s, e, L, R);
+        let from = s, to = e, rep = full.slice(s, e);
+        if (st === "inner") rep = rep.slice(L.length, rep.length - R.length);
+        else if (st === "outer") { from = s - L.length; to = e + R.length; }
+        else rep = L + rep + R;
+        ta.focus(); ta.setSelectionRange(from, to);
+        document.execCommand("insertText", false, rep);
+        ta.setSelectionRange(from, from + rep.length);
+        this._saveSel();
     }
 
     _linePrefix(prefix) {
@@ -823,8 +830,18 @@ module.exports = class TFExtra {
             if (s !== e) this._snap = { type: "textarea", start: s, end: e };
             return;
         }
-        // Не сохраняем stale Slate path, он часто ломается после ререндера.
-        this._snap = null;
+        // Сохраняем DOM Range для contenteditable — он переживёт клик по кнопке,
+        // если на кнопке стоит preventDefault на pointerdown (фокус не уходит).
+        const sel = window.getSelection();
+        if (sel && sel.rangeCount > 0 && !sel.isCollapsed) {
+            try {
+                this._snap = { type: "range", range: sel.getRangeAt(0).cloneRange(), ta };
+            } catch (_) {
+                this._snap = null;
+            }
+        } else {
+            this._snap = null;
+        }
     }
 
     _restoreSel() {
@@ -833,7 +850,18 @@ module.exports = class TFExtra {
         if (snap.type === "textarea" && ta.tagName === "TEXTAREA") {
             ta.focus(); ta.setSelectionRange(snap.start, snap.end); return;
         }
-        return;
+        if (snap.type === "range") {
+            // Возвращаем фокус редактору и восстанавливаем сохранённый Range.
+            const target = snap.ta ?? ta;
+            target.focus();
+            try {
+                const sel = window.getSelection();
+                sel.removeAllRanges();
+                sel.addRange(snap.range);
+            } catch (_) {
+                // Range мог протухнуть после ререндера — молча игнорируем.
+            }
+        }
     }
 
     _getSelectedText() {
