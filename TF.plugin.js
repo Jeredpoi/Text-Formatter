@@ -1,7 +1,7 @@
 /**
  * @name TFExtra
  * @description Встраивает ANSI-цвета (текст и фон), заголовки H1–H3, подчёркивание, списки, код-блок и другое кастомное форматирование в попап Discord.
- * @version 5.1.1
+ * @version 5.1.2
  * @author TF / Zerebos base
  */
 
@@ -26,7 +26,7 @@
 
 const { Patcher, DOM, ReactUtils, Webpack, Logger, Data } = BdApi;
 const PLUGIN_NAME = "TFExtra";
-const VERSION     = "5.1.1";
+const VERSION     = "5.1.2";
 
 // Попап форматирования Discord при выделении текста использует класс buttons_XXXXX
 // Но такой же класс есть и в панели снизу — различаем по наличию нативных кнопок Discord внутри
@@ -668,8 +668,11 @@ module.exports = class TFExtra {
         const ta = this._ta(); if (!ta) return;
         const toggle = (txt) => {
             const lines = txt.split("\n");
-            const all = lines.every(l => l.startsWith(prefix));
-            return all ? lines.map(l => l.slice(prefix.length)).join("\n") : lines.map(l => prefix + l).join("\n");
+            const nonEmpty = lines.filter(l => l !== "");
+            const all = nonEmpty.length > 0 && nonEmpty.every(l => l.startsWith(prefix));
+            return all
+                ? lines.map(l => l === "" ? l : l.slice(prefix.length)).join("\n")
+                : lines.map(l => l === "" ? l : prefix + l).join("\n");
         };
         const doneSlate = this._replaceOnSlate((selected) => toggle(selected));
         if (doneSlate) return;
