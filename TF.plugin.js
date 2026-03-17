@@ -1,7 +1,7 @@
 /**
  * @name TFExtra
  * @description Встраивает ANSI-цвета (текст и фон), заголовки H1–H3, подчёркивание, списки, код-блок и другое кастомное форматирование в попап Discord.
- * @version 5.1.0
+ * @version 5.1.1
  * @author TF / Zerebos base
  */
 
@@ -26,7 +26,7 @@
 
 const { Patcher, DOM, ReactUtils, Webpack, Logger, Data } = BdApi;
 const PLUGIN_NAME = "TFExtra";
-const VERSION     = "5.1.0";
+const VERSION     = "5.1.1";
 
 // Попап форматирования Discord при выделении текста использует класс buttons_XXXXX
 // Но такой же класс есть и в панели снизу — различаем по наличию нативных кнопок Discord внутри
@@ -69,13 +69,13 @@ const BTNS = [
     { id:"hyperlink",  type:"link",                          label:"🔗",      labelStyle:"font-size:13px;",                                                                title:"Гиперссылка",             hotkey:{ctrl:true,shift:true,key:"L"},   defaultVisible:true },
     { id:"clearAll",   type:"clearall",                      label:"✕fmt",    labelStyle:"font-size:10px;font-weight:700;opacity:0.8;",                                    title:"Очистить форматирование", hotkey:null,                             defaultVisible:true },
     // ── ANSI цвета текста (круглые свотчи) ────────────────────────────────
-    { id:"ansiRed",     type:"ansi", label:'<span class="tfx-sw" style="background:#ed4245"></span>',                                            title:"Красный",        hotkey:null, defaultVisible:true },
-    { id:"ansiGreen",   type:"ansi", label:'<span class="tfx-sw" style="background:#57f287"></span>',                                            title:"Зелёный",        hotkey:null, defaultVisible:true },
-    { id:"ansiYellow",  type:"ansi", label:'<span class="tfx-sw" style="background:#faa61a"></span>',                                            title:"Жёлтый",         hotkey:null, defaultVisible:true },
-    { id:"ansiBlue",    type:"ansi", label:'<span class="tfx-sw" style="background:#5865f2"></span>',                                            title:"Синий",          hotkey:null, defaultVisible:true },
-    { id:"ansiMagenta", type:"ansi", label:'<span class="tfx-sw" style="background:#c678dd"></span>',                                            title:"Пурпурный",      hotkey:null, defaultVisible:true },
-    { id:"ansiCyan",    type:"ansi", label:'<span class="tfx-sw" style="background:#56b6c2"></span>',                                            title:"Циан",           hotkey:null, defaultVisible:true },
-    { id:"ansiWhite",   type:"ansi", label:'<span class="tfx-sw" style="background:#dce0e8;border-color:rgba(255,255,255,0.45)"></span>',        title:"Белый",          hotkey:null, defaultVisible:true },
+    { id:"ansiRed",     type:"ansi", label:'<span class="tfx-sw" style="background:#ed4245"></span>',                                            title:"Текст: Красный",     hotkey:null, defaultVisible:true },
+    { id:"ansiGreen",   type:"ansi", label:'<span class="tfx-sw" style="background:#57f287"></span>',                                            title:"Текст: Зелёный",     hotkey:null, defaultVisible:true },
+    { id:"ansiYellow",  type:"ansi", label:'<span class="tfx-sw" style="background:#faa61a"></span>',                                            title:"Текст: Жёлтый",      hotkey:null, defaultVisible:true },
+    { id:"ansiBlue",    type:"ansi", label:'<span class="tfx-sw" style="background:#5865f2"></span>',                                            title:"Текст: Синий",       hotkey:null, defaultVisible:true },
+    { id:"ansiMagenta", type:"ansi", label:'<span class="tfx-sw" style="background:#c678dd"></span>',                                            title:"Текст: Пурпурный",   hotkey:null, defaultVisible:true },
+    { id:"ansiCyan",    type:"ansi", label:'<span class="tfx-sw" style="background:#56b6c2"></span>',                                            title:"Текст: Циан",        hotkey:null, defaultVisible:true },
+    { id:"ansiWhite",   type:"ansi", label:'<span class="tfx-sw" style="background:#dce0e8;border-color:rgba(255,255,255,0.45)"></span>',        title:"Текст: Белый",       hotkey:null, defaultVisible:true },
     { id:"ansiReset",   type:"reset",label:"\u2715", labelStyle:"font-size:12px;font-weight:700;opacity:0.7;",                                   title:"Убрать ANSI",    hotkey:null, defaultVisible:true },
     // ── ANSI фон (квадратные свотчи) ──────────────────────────────────────
     { id:"ansiBgRed",     type:"ansi", label:'<span class="tfx-sw tfx-sw-sq" style="background:#c0392b"></span>',                                title:"Фон: Красный",   hotkey:null, defaultVisible:true },
@@ -510,7 +510,7 @@ module.exports = class TFExtra {
         if (ta.tagName !== "TEXTAREA") {
             const sn = ReactUtils.getOwnerInstance(ta);
             const sl = sn?.ref?.current?.getSlateEditor();
-            const info = this._slateInfo(sl);
+            const info = this._slateInfo(sl, this._snap?.slateSel ?? sl?.selection);
             if (info) {
                 selectedText = info.text.slice(info.start, info.end);
                 slateState = { sl, sn, info };
@@ -846,7 +846,9 @@ module.exports = class TFExtra {
         }
         if (snap.type === "range") {
             const target = snap.ta ?? ta;
-            target.focus();
+            // Важно: сначала восстанавливаем DOM Range, потом фокусируем.
+            // Если сделать наоборот — Slate's onFocus срабатывает и сбрасывает
+            // editor.selection по текущему (collapsed) DOM-выделению.
             try {
                 const sel = window.getSelection();
                 sel.removeAllRanges();
@@ -854,9 +856,9 @@ module.exports = class TFExtra {
             } catch (_) {
                 // Range мог протухнуть после ререндера — молча игнорируем.
             }
-            // target.focus() сбрасывает sl.selection внутри Slate.
-            // Восстанавливаем сохранённый Slate-selection, иначе _replaceOnSlate
-            // видит collapsed selection и _replaceRangeText / execCommand игнорируются.
+            target.focus();
+            // Запасной вариант: явно восстанавливаем Slate-selection на случай,
+            // если onFocus всё-таки сбросил его после нашего addRange.
             try {
                 if (snap.sl && snap.slateSel) {
                     snap.sl.selection = JSON.parse(JSON.stringify(snap.slateSel));
@@ -886,7 +888,9 @@ module.exports = class TFExtra {
         if (!ta || ta.tagName === "TEXTAREA") return false;
         const sn = ReactUtils.getOwnerInstance(ta);
         const sl = sn?.ref?.current?.getSlateEditor();
-        const info = this._slateInfo(sl);
+        // Приоритет — сохранённый slateSel, т.к. target.focus() в _restoreSel
+        // мог сбросить sl.selection через Slate's onFocus до того как мы успели.
+        const info = this._slateInfo(sl, this._snap?.slateSel ?? sl?.selection);
         if (!info) return false;
         const selected = info.text.slice(info.start, info.end);
         const rep = transformFn(selected);
