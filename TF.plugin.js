@@ -1,7 +1,7 @@
 /**
  * @name TFExtra
  * @description Встраивает ANSI-цвета (текст и фон), заголовки H1–H3, подчёркивание, списки, код-блок и другое кастомное форматирование в попап Discord.
- * @version 5.1.4
+ * @version 5.1.5
  * @author TF / Zerebos base
  */
 
@@ -26,7 +26,7 @@
 
 const { Patcher, DOM, ReactUtils, Webpack, Logger, Data } = BdApi;
 const PLUGIN_NAME = "TFExtra";
-const VERSION     = "5.1.4";
+const VERSION     = "5.1.5";
 
 // Попап форматирования Discord при выделении текста использует класс buttons_XXXXX
 // Но такой же класс есть и в панели снизу — различаем по наличию нативных кнопок Discord внутри
@@ -952,16 +952,11 @@ module.exports = class TFExtra {
                 Logger.info(PLUGIN_NAME, `_restoreSel: addRange failed: ${err?.message}`);
             }
             target.focus();
-            // Запасной вариант: явно восстанавливаем Slate-selection на случай,
-            // если onFocus всё-таки сбросил его после нашего addRange.
-            let slateOk = false;
-            try {
-                if (snap.sl && snap.slateSel) {
-                    snap.sl.selection = JSON.parse(JSON.stringify(snap.slateSel));
-                    slateOk = true;
-                }
-            } catch (_) {}
-            Logger.info(PLUGIN_NAME, `_restoreSel: rangeOk=${rangeOk} slateOk=${slateOk} slateSel=${!!snap.slateSel}`);
+            // FIX: sl.selection НЕ восстанавливаем здесь — это делает _replaceOnSlate
+            // непосредственно перед использованием Slate API.
+            // Если восстанавливать здесь, а потом применить execCommand (ANSI и др.),
+            // DOM меняется без уведомления Slate → "Cannot resolve a DOM point" при ре-рендере.
+            Logger.info(PLUGIN_NAME, `_restoreSel: rangeOk=${rangeOk} slateSel=${!!snap.slateSel}`);
         }
     }
 
@@ -992,8 +987,12 @@ module.exports = class TFExtra {
         const ta = this._ta();
         if (!ta || ta.tagName === "TEXTAREA") return false;
         const sl = this._getSlate(ta);
-        // Приоритет — сохранённый slateSel, т.к. target.focus() в _restoreSel
-        // мог сбросить sl.selection через Slate's onFocus до того как мы успели.
+        // FIX: восстанавливаем sl.selection здесь, прямо перед Slate API —
+        // а не в _restoreSel, иначе execCommand-операции (ANSI) меняют DOM
+        // без уведомления Slate и возникает "Cannot resolve a DOM point".
+        if (sl && this._snap?.slateSel) {
+            try { sl.selection = JSON.parse(JSON.stringify(this._snap.slateSel)); } catch (_) {}
+        }
         const info = this._slateInfo(sl, this._snap?.slateSel ?? sl?.selection);
         if (!info) {
             Logger.info(PLUGIN_NAME, `_replaceOnSlate: no info sl=${!!sl} slateSel=${!!this._snap?.slateSel}`);
@@ -1029,8 +1028,10 @@ module.exports = class TFExtra {
             return null;
         }
         const path = a.path;
-        let node = sl.children;
-        for (const idx of path) node = node?.[idx];
+        // FIX: идём через .children на каждом уровне:
+        // path=[0,0] → sl.children[0].children[0], а не sl.children[0][0]
+        let node = sl;
+        for (const idx of path) node = node?.children?.[idx];
         const text = typeof node?.text === "string" ? node.text : "";
         if (!text) {
             Logger.info(PLUGIN_NAME, `_slateInfo: node has no text path=${JSON.stringify(path)}`);
@@ -1041,7 +1042,8 @@ module.exports = class TFExtra {
     }
 
     _put(sl, path, start, end, rep, ss, se) {
-        const cn = path.reduce((a, i) => a?.[i], sl.children);
+        // FIX: идём через .children на каждом уровне (как в _slateInfo)
+        const cn = path.reduce((a, i) => a?.children?.[i], sl);
         const cur = typeof cn?.text === "string" ? cn.text : "";
         const rem = cur.slice(start, end);
         Logger.info(PLUGIN_NAME, `_put: path=${JSON.stringify(path)} rem="${rem.slice(0, 30)}" rep="${rep.slice(0, 30)}"`);
