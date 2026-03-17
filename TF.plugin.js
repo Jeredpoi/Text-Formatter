@@ -820,12 +820,16 @@ module.exports = class TFExtra {
             if (s !== e) this._snap = { type: "textarea", start: s, end: e };
             return;
         }
-        // Сохраняем DOM Range для contenteditable — он переживёт клик по кнопке,
-        // если на кнопке стоит preventDefault на pointerdown (фокус не уходит).
+        // Сохраняем DOM Range и Slate-selection — оба нужны, потому что
+        // target.focus() в _restoreSel сбрасывает sl.selection, и без явного
+        // восстановления _replaceOnSlate видит collapsed-selection и падает на execCommand.
         const sel = window.getSelection();
         if (sel && sel.rangeCount > 0 && !sel.isCollapsed) {
             try {
-                this._snap = { type: "range", range: sel.getRangeAt(0).cloneRange(), ta };
+                const sn = ReactUtils.getOwnerInstance(ta);
+                const sl = sn?.ref?.current?.getSlateEditor?.();
+                const slateSel = sl?.selection ? JSON.parse(JSON.stringify(sl.selection)) : null;
+                this._snap = { type: "range", range: sel.getRangeAt(0).cloneRange(), ta, sl, slateSel };
             } catch (_) {
                 this._snap = null;
             }
@@ -841,7 +845,6 @@ module.exports = class TFExtra {
             ta.focus(); ta.setSelectionRange(snap.start, snap.end); return;
         }
         if (snap.type === "range") {
-            // Возвращаем фокус редактору и восстанавливаем сохранённый Range.
             const target = snap.ta ?? ta;
             target.focus();
             try {
@@ -851,6 +854,14 @@ module.exports = class TFExtra {
             } catch (_) {
                 // Range мог протухнуть после ререндера — молча игнорируем.
             }
+            // target.focus() сбрасывает sl.selection внутри Slate.
+            // Восстанавливаем сохранённый Slate-selection, иначе _replaceOnSlate
+            // видит collapsed selection и _replaceRangeText / execCommand игнорируются.
+            try {
+                if (snap.sl && snap.slateSel) {
+                    snap.sl.selection = JSON.parse(JSON.stringify(snap.slateSel));
+                }
+            } catch (_) {}
         }
     }
 
