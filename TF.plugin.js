@@ -1,7 +1,7 @@
 /**
  * @name TFExtra
  * @description Встраивает ANSI-цвета (текст и фон), заголовки H1–H3, подчёркивание, списки, код-блок и другое кастомное форматирование в попап Discord.
- * @version 5.1.2
+ * @version 5.1.3
  * @author TF / Zerebos base
  */
 
@@ -26,7 +26,7 @@
 
 const { Patcher, DOM, ReactUtils, Webpack, Logger, Data } = BdApi;
 const PLUGIN_NAME = "TFExtra";
-const VERSION     = "5.1.2";
+const VERSION     = "5.1.3";
 
 // Попап форматирования Discord при выделении текста использует класс buttons_XXXXX
 // Но такой же класс есть и в панели снизу — различаем по наличию нативных кнопок Discord внутри
@@ -462,7 +462,8 @@ module.exports = class TFExtra {
 
     _exec(id) {
         const btn = BTNS.find(b => b.id === id);
-        if (!btn) return;
+        if (!btn) { Logger.info(PLUGIN_NAME, `_exec: unknown id=${id}`); return; }
+        Logger.info(PLUGIN_NAME, `_exec: id=${id} type=${btn.type}`);
         switch (btn.type) {
             case "ansi":    this._wrap(...ANSI[id]); break;
             case "wrap":    this._wrap(...btn.wrap); break;
@@ -480,27 +481,30 @@ module.exports = class TFExtra {
     }
 
     _reset() {
+        Logger.info(PLUGIN_NAME, `_reset: start`);
         this._restoreSel();
-        const ta = this._ta(); if (!ta) return;
+        const ta = this._ta(); if (!ta) { Logger.info(PLUGIN_NAME, `_reset: no ta`); return; }
         const strip = (s) => s.replace(ANSI_RE(), "$1");
         const doneSlate = this._replaceOnSlate((selected) => strip(selected));
-        if (doneSlate) return;
+        if (doneSlate) { Logger.info(PLUGIN_NAME, `_reset: done via slate`); return; }
         if (ta.tagName === "TEXTAREA") {
             const s = this._snap?.start ?? ta.selectionStart;
             const e = this._snap?.end   ?? ta.selectionEnd;
-            if (s === e) return;
+            if (s === e) { Logger.info(PLUGIN_NAME, `_reset: TEXTAREA collapsed`); return; }
             const stripped = strip(ta.value.slice(s, e));
             ta.focus(); ta.setSelectionRange(s, e);
             document.execCommand("insertText", false, stripped);
+            Logger.info(PLUGIN_NAME, `_reset: done via TEXTAREA execCommand`);
             return;
         }
         this._replaceRangeText((selected) => strip(selected));
+        Logger.info(PLUGIN_NAME, `_reset: done via replaceRangeText`);
     }
 
-    // НОВОЕ: гиперссылка [текст](url)
     _link() {
+        Logger.info(PLUGIN_NAME, `_link: start`);
         this._restoreSel();
-        const ta = this._ta(); if (!ta) return;
+        const ta = this._ta(); if (!ta) { Logger.info(PLUGIN_NAME, `_link: no ta`); return; }
 
         // Сохраняем выделенный текст и состояние ДО открытия модала
         let selectedText = "";
@@ -526,7 +530,8 @@ module.exports = class TFExtra {
             }
         }
 
-        if (!selectedText) return;
+        Logger.info(PLUGIN_NAME, `_link: selectedText="${selectedText.slice(0, 40)}" slateState=${!!slateState} snapState=${!!snapState}`);
+        if (!selectedText) { Logger.info(PLUGIN_NAME, `_link: no selectedText — abort`); return; }
 
         const inp = document.createElement("input");
         inp.type = "text";
@@ -545,8 +550,9 @@ module.exports = class TFExtra {
             cancelText: "Отмена",
             onConfirm: () => {
                 const url = inp.value.trim();
-                if (!url) return;
+                if (!url) { Logger.info(PLUGIN_NAME, `_link: empty url`); return; }
                 const rep = `[${selectedText}](${url})`;
+                Logger.info(PLUGIN_NAME, `_link: inserting rep="${rep.slice(0, 60)}"`);
                 if (slateState) {
                     const { sl, sn, info } = slateState;
                     this._put(sl, info.path, info.start, info.end, rep, info.start, info.start + rep.length);
@@ -563,10 +569,10 @@ module.exports = class TFExtra {
         setTimeout(() => inp.focus(), 150);
     }
 
-    // НОВОЕ: очистка всего форматирования (markdown + ANSI)
     _clearAll() {
+        Logger.info(PLUGIN_NAME, `_clearAll: start`);
         this._restoreSel();
-        const ta = this._ta(); if (!ta) return;
+        const ta = this._ta(); if (!ta) { Logger.info(PLUGIN_NAME, `_clearAll: no ta`); return; }
         const strip = (s) => {
             let r = s;
             // ANSI-блоки
@@ -604,21 +610,24 @@ module.exports = class TFExtra {
             return r;
         };
         const doneSlate = this._replaceOnSlate((selected) => strip(selected));
-        if (doneSlate) return;
+        if (doneSlate) { Logger.info(PLUGIN_NAME, `_clearAll: done via slate`); return; }
         if (ta.tagName === "TEXTAREA") {
             const s = this._snap?.start ?? ta.selectionStart;
             const e = this._snap?.end   ?? ta.selectionEnd;
-            if (s === e) return;
+            if (s === e) { Logger.info(PLUGIN_NAME, `_clearAll: TEXTAREA collapsed`); return; }
             ta.focus(); ta.setSelectionRange(s, e);
             document.execCommand("insertText", false, strip(ta.value.slice(s, e)));
+            Logger.info(PLUGIN_NAME, `_clearAll: done via TEXTAREA execCommand`);
             return;
         }
         this._replaceRangeText((selected) => strip(selected));
+        Logger.info(PLUGIN_NAME, `_clearAll: done via replaceRangeText`);
     }
 
     _wrap(L, R) {
+        Logger.info(PLUGIN_NAME, `_wrap: L="${L.slice(0,20)}" R="${R.slice(0,20)}"`);
         this._restoreSel();
-        const ta = this._ta(); if (!ta) return;
+        const ta = this._ta(); if (!ta) { Logger.info(PLUGIN_NAME, `_wrap: no ta`); return; }
 
         // Slate не поддерживает \n в операции insert_text — каждая новая строка
         // там отдельный узел. ANSI-обёртки содержат переносы (```ansi\n...\n```),
@@ -634,10 +643,11 @@ module.exports = class TFExtra {
                     }
                     return L + selected + R;
                 });
-                if (doneSlate) return;
+                if (doneSlate) { Logger.info(PLUGIN_NAME, `_wrap: done via slate`); return; }
             }
             // Fallback (и единственный путь для ANSI): execCommand на DOM-выделении.
             // _restoreSel() выше уже вернул фокус и восстановил Range.
+            Logger.info(PLUGIN_NAME, `_wrap: fallback to replaceRangeText hasNewline=${hasNewline}`);
             this._replaceRangeText((selected) => {
                 if (selected.startsWith(L) && selected.endsWith(R) && selected.length >= L.length + R.length) {
                     return selected.slice(L.length, selected.length - R.length);
@@ -650,13 +660,14 @@ module.exports = class TFExtra {
         // TEXTAREA path
         let s = ta.selectionStart, e = ta.selectionEnd;
         if (s === e && this._snap?.type === "textarea") { s = this._snap.start; e = this._snap.end; }
-        if (s === e) return;
+        if (s === e) { Logger.info(PLUGIN_NAME, `_wrap: TEXTAREA collapsed`); return; }
         const full = ta.value ?? "";
         const st = this._wrapState(full, s, e, L, R);
         let from = s, to = e, rep = full.slice(s, e);
         if (st === "inner") rep = rep.slice(L.length, rep.length - R.length);
         else if (st === "outer") { from = s - L.length; to = e + R.length; }
         else rep = L + rep + R;
+        Logger.info(PLUGIN_NAME, `_wrap: TEXTAREA st=${st} s=${s} e=${e}`);
         ta.focus(); ta.setSelectionRange(from, to);
         document.execCommand("insertText", false, rep);
         ta.setSelectionRange(from, from + rep.length);
@@ -664,8 +675,9 @@ module.exports = class TFExtra {
     }
 
     _linePrefix(prefix) {
+        Logger.info(PLUGIN_NAME, `_linePrefix: prefix="${prefix}"`);
         this._restoreSel();
-        const ta = this._ta(); if (!ta) return;
+        const ta = this._ta(); if (!ta) { Logger.info(PLUGIN_NAME, `_linePrefix: no ta`); return; }
         const toggle = (txt) => {
             const lines = txt.split("\n");
             const nonEmpty = lines.filter(l => l !== "");
@@ -675,25 +687,27 @@ module.exports = class TFExtra {
                 : lines.map(l => l === "" ? l : prefix + l).join("\n");
         };
         const doneSlate = this._replaceOnSlate((selected) => toggle(selected));
-        if (doneSlate) return;
+        if (doneSlate) { Logger.info(PLUGIN_NAME, `_linePrefix: done via slate`); return; }
         if (ta.tagName === "TEXTAREA") {
             let s = ta.selectionStart, e = ta.selectionEnd;
             if (s === e && this._snap?.type === "textarea") { s = this._snap.start; e = this._snap.end; }
-            if (s === e) return;
+            if (s === e) { Logger.info(PLUGIN_NAME, `_linePrefix: TEXTAREA collapsed`); return; }
             const full = ta.value ?? "";
             const rep = toggle(full.slice(s, e));
             ta.focus(); ta.setSelectionRange(s, e);
             document.execCommand("insertText", false, rep);
             ta.setSelectionRange(s, s + rep.length);
+            Logger.info(PLUGIN_NAME, `_linePrefix: done via TEXTAREA execCommand`);
             this._saveSel(); return;
         }
         this._replaceRangeText(toggle);
+        Logger.info(PLUGIN_NAME, `_linePrefix: done via replaceRangeText`);
     }
 
-    // FIX: нумерованный список корректно обрабатывает пустые строки
     _numbered() {
+        Logger.info(PLUGIN_NAME, `_numbered: start`);
         this._restoreSel();
-        const ta = this._ta(); if (!ta) return;
+        const ta = this._ta(); if (!ta) { Logger.info(PLUGIN_NAME, `_numbered: no ta`); return; }
         const toggle = (txt) => {
             const lines = txt.split("\n");
             const nonEmpty = lines.filter(l => l.trim() !== "");
@@ -705,19 +719,21 @@ module.exports = class TFExtra {
             return lines.map(l => l.trim() === "" ? l : `${counter++}. ${l}`).join("\n");
         };
         const doneSlate = this._replaceOnSlate((selected) => toggle(selected));
-        if (doneSlate) return;
+        if (doneSlate) { Logger.info(PLUGIN_NAME, `_numbered: done via slate`); return; }
         if (ta.tagName === "TEXTAREA") {
             let s = ta.selectionStart, e = ta.selectionEnd;
             if (s === e && this._snap?.type === "textarea") { s = this._snap.start; e = this._snap.end; }
-            if (s === e) return;
+            if (s === e) { Logger.info(PLUGIN_NAME, `_numbered: TEXTAREA collapsed`); return; }
             const full = ta.value ?? "";
             const rep = toggle(full.slice(s, e));
             ta.focus(); ta.setSelectionRange(s, e);
             document.execCommand("insertText", false, rep);
             ta.setSelectionRange(s, s + rep.length);
+            Logger.info(PLUGIN_NAME, `_numbered: done via TEXTAREA execCommand`);
             this._saveSel(); return;
         }
         this._replaceRangeText(toggle);
+        Logger.info(PLUGIN_NAME, `_numbered: done via replaceRangeText`);
     }
 
     _refreshActive(container) {
@@ -746,7 +762,9 @@ module.exports = class TFExtra {
             sel = this._getSelectedText();
         }
         if (!sel) return false;
-        return sel.split("\n").every(l => l.startsWith(prefix));
+        // FIX: пустые строки не учитываются при проверке активности (как и в _linePrefix)
+        const nonEmpty = sel.split("\n").filter(l => l !== "");
+        return nonEmpty.length > 0 && nonEmpty.every(l => l.startsWith(prefix));
     }
 
     _isNumberedActive(ta) {
@@ -788,17 +806,22 @@ module.exports = class TFExtra {
         return ANSI_RE().test(sel);
     }
 
-    // FIX: убран хардкод класса "textArea_bdf0de" — теперь используется паттерн-поиск как запасной вариант
     _ta() {
         const ae = document.activeElement;
-        if (ae?.matches?.('div[contenteditable="true"]')) return ae;
+        if (ae?.matches?.('div[contenteditable="true"]')) {
+            Logger.info(PLUGIN_NAME, `_ta: via activeElement`);
+            return ae;
+        }
 
         const sel = window.getSelection();
         if (sel?.anchorNode) {
             const ce = sel.anchorNode.nodeType === 1
                 ? sel.anchorNode.closest?.('div[contenteditable="true"]')
                 : sel.anchorNode.parentElement?.closest?.('div[contenteditable="true"]');
-            if (ce) return ce;
+            if (ce) {
+                Logger.info(PLUGIN_NAME, `_ta: via selection anchorNode`);
+                return ce;
+            }
         }
 
         const cls = Webpack.getByKeys("channelTextArea", "textArea");
@@ -809,23 +832,34 @@ module.exports = class TFExtra {
 
         if (sel?.anchorNode) {
             const bySel = all.find(el => el.contains(sel.anchorNode));
-            if (bySel) return bySel;
+            if (bySel) {
+                Logger.info(PLUGIN_NAME, `_ta: via textArea contains anchorNode`);
+                return bySel;
+            }
         }
         const byActive = all.find(el => el.contains(document.activeElement));
-        if (byActive) return byActive;
-        return all[0] ?? document.querySelector('div[contenteditable="true"]');
+        if (byActive) {
+            Logger.info(PLUGIN_NAME, `_ta: via textArea contains activeElement`);
+            return byActive;
+        }
+        const result = all[0] ?? document.querySelector('div[contenteditable="true"]');
+        Logger.info(PLUGIN_NAME, `_ta: fallback result=${result ? result.tagName : 'null'}`);
+        return result;
     }
 
     _saveSel() {
-        const ta = this._ta(); if (!ta) return;
+        const ta = this._ta();
+        if (!ta) { Logger.info(PLUGIN_NAME, `_saveSel: no ta`); return; }
         if (ta.tagName === "TEXTAREA") {
             const { selectionStart: s, selectionEnd: e } = ta;
-            if (s !== e) this._snap = { type: "textarea", start: s, end: e };
+            if (s !== e) {
+                this._snap = { type: "textarea", start: s, end: e };
+                Logger.info(PLUGIN_NAME, `_saveSel: TEXTAREA s=${s} e=${e}`);
+            } else {
+                Logger.info(PLUGIN_NAME, `_saveSel: TEXTAREA collapsed — snap not saved`);
+            }
             return;
         }
-        // Сохраняем DOM Range и Slate-selection — оба нужны, потому что
-        // target.focus() в _restoreSel сбрасывает sl.selection, и без явного
-        // восстановления _replaceOnSlate видит collapsed-selection и падает на execCommand.
         const sel = window.getSelection();
         if (sel && sel.rangeCount > 0 && !sel.isCollapsed) {
             try {
@@ -833,40 +867,52 @@ module.exports = class TFExtra {
                 const sl = sn?.ref?.current?.getSlateEditor?.();
                 const slateSel = sl?.selection ? JSON.parse(JSON.stringify(sl.selection)) : null;
                 this._snap = { type: "range", range: sel.getRangeAt(0).cloneRange(), ta, sl, slateSel };
-            } catch (_) {
+                Logger.info(PLUGIN_NAME, `_saveSel: range saved sl=${!!sl} slateSel=${!!slateSel} text="${sel.toString().slice(0, 40)}"`);
+            } catch (err) {
                 this._snap = null;
+                Logger.info(PLUGIN_NAME, `_saveSel: error saving snap: ${err?.message}`);
             }
         } else {
             this._snap = null;
+            Logger.info(PLUGIN_NAME, `_saveSel: no selection (collapsed=${sel?.isCollapsed}) — snap cleared`);
         }
     }
 
     _restoreSel() {
-        const snap = this._snap; if (!snap) return;
-        const ta = this._ta(); if (!ta) return;
+        const snap = this._snap;
+        if (!snap) { Logger.info(PLUGIN_NAME, `_restoreSel: no snap`); return; }
+        const ta = this._ta();
+        if (!ta) { Logger.info(PLUGIN_NAME, `_restoreSel: no ta`); return; }
         if (snap.type === "textarea" && ta.tagName === "TEXTAREA") {
-            ta.focus(); ta.setSelectionRange(snap.start, snap.end); return;
+            ta.focus(); ta.setSelectionRange(snap.start, snap.end);
+            Logger.info(PLUGIN_NAME, `_restoreSel: TEXTAREA restored s=${snap.start} e=${snap.end}`);
+            return;
         }
         if (snap.type === "range") {
             const target = snap.ta ?? ta;
             // Важно: сначала восстанавливаем DOM Range, потом фокусируем.
             // Если сделать наоборот — Slate's onFocus срабатывает и сбрасывает
             // editor.selection по текущему (collapsed) DOM-выделению.
+            let rangeOk = false;
             try {
                 const sel = window.getSelection();
                 sel.removeAllRanges();
                 sel.addRange(snap.range);
-            } catch (_) {
-                // Range мог протухнуть после ререндера — молча игнорируем.
+                rangeOk = !sel.isCollapsed;
+            } catch (err) {
+                Logger.info(PLUGIN_NAME, `_restoreSel: addRange failed: ${err?.message}`);
             }
             target.focus();
             // Запасной вариант: явно восстанавливаем Slate-selection на случай,
             // если onFocus всё-таки сбросил его после нашего addRange.
+            let slateOk = false;
             try {
                 if (snap.sl && snap.slateSel) {
                     snap.sl.selection = JSON.parse(JSON.stringify(snap.slateSel));
+                    slateOk = true;
                 }
             } catch (_) {}
+            Logger.info(PLUGIN_NAME, `_restoreSel: rangeOk=${rangeOk} slateOk=${slateOk} slateSel=${!!snap.slateSel}`);
         }
     }
 
@@ -878,11 +924,18 @@ module.exports = class TFExtra {
 
     _replaceRangeText(transformFn) {
         const sel = window.getSelection();
-        if (!sel || sel.rangeCount < 1 || sel.isCollapsed) return;
+        if (!sel || sel.rangeCount < 1 || sel.isCollapsed) {
+            Logger.info(PLUGIN_NAME, `_replaceRangeText: no selection (collapsed=${sel?.isCollapsed} rangeCount=${sel?.rangeCount})`);
+            return;
+        }
         const selected = sel.toString();
-        if (!selected) return;
+        if (!selected) { Logger.info(PLUGIN_NAME, `_replaceRangeText: empty text`); return; }
         const rep = transformFn(selected);
-        if (typeof rep !== "string" || rep === selected) return;
+        if (typeof rep !== "string" || rep === selected) {
+            Logger.info(PLUGIN_NAME, `_replaceRangeText: noop (rep===selected)`);
+            return;
+        }
+        Logger.info(PLUGIN_NAME, `_replaceRangeText: execCommand "${selected.slice(0, 40)}" → "${rep.slice(0, 40)}"`);
         document.execCommand("insertText", false, rep);
     }
 
@@ -894,10 +947,17 @@ module.exports = class TFExtra {
         // Приоритет — сохранённый slateSel, т.к. target.focus() в _restoreSel
         // мог сбросить sl.selection через Slate's onFocus до того как мы успели.
         const info = this._slateInfo(sl, this._snap?.slateSel ?? sl?.selection);
-        if (!info) return false;
+        if (!info) {
+            Logger.info(PLUGIN_NAME, `_replaceOnSlate: no info sl=${!!sl} slateSel=${!!this._snap?.slateSel}`);
+            return false;
+        }
         const selected = info.text.slice(info.start, info.end);
         const rep = transformFn(selected);
-        if (typeof rep !== "string" || rep === selected) return true;
+        if (typeof rep !== "string" || rep === selected) {
+            Logger.info(PLUGIN_NAME, `_replaceOnSlate: noop rep===selected="${selected.slice(0, 30)}"`);
+            return true;
+        }
+        Logger.info(PLUGIN_NAME, `_replaceOnSlate: put path=${JSON.stringify(info.path)} "${selected.slice(0, 30)}" → "${rep.slice(0, 30)}"`);
         this._put(sl, info.path, info.start, info.end, rep, info.start, info.start + rep.length);
         sn?.focus?.();
         return true;
@@ -905,17 +965,30 @@ module.exports = class TFExtra {
 
     _slateInfo(sl, selection = null) {
         const sel = selection ?? sl?.selection;
-        if (!sel?.anchor || !sel?.focus) return null;
+        if (!sel?.anchor || !sel?.focus) {
+            Logger.info(PLUGIN_NAME, `_slateInfo: no anchor/focus`);
+            return null;
+        }
         const a = sel.anchor, f = sel.focus;
-        if (JSON.stringify(a.path) !== JSON.stringify(f.path)) return null;
+        if (JSON.stringify(a.path) !== JSON.stringify(f.path)) {
+            Logger.info(PLUGIN_NAME, `_slateInfo: cross-node a=${JSON.stringify(a.path)} f=${JSON.stringify(f.path)}`);
+            return null;
+        }
         const start = Math.min(a.offset, f.offset);
         const end   = Math.max(a.offset, f.offset);
-        if (start === end) return null;
+        if (start === end) {
+            Logger.info(PLUGIN_NAME, `_slateInfo: collapsed offset=${start}`);
+            return null;
+        }
         const path = a.path;
         let node = sl.children;
         for (const idx of path) node = node?.[idx];
         const text = typeof node?.text === "string" ? node.text : "";
-        if (!text) return null;
+        if (!text) {
+            Logger.info(PLUGIN_NAME, `_slateInfo: node has no text path=${JSON.stringify(path)}`);
+            return null;
+        }
+        Logger.info(PLUGIN_NAME, `_slateInfo: ok path=${JSON.stringify(path)} start=${start} end=${end} text="${text.slice(start, end).slice(0, 30)}"`);
         return { path, start, end, text };
     }
 
@@ -923,12 +996,14 @@ module.exports = class TFExtra {
         const cn = path.reduce((a, i) => a?.[i], sl.children);
         const cur = typeof cn?.text === "string" ? cn.text : "";
         const rem = cur.slice(start, end);
+        Logger.info(PLUGIN_NAME, `_put: path=${JSON.stringify(path)} rem="${rem.slice(0, 30)}" rep="${rep.slice(0, 30)}"`);
         if (rem.length) sl.apply({ type: "remove_text", path, offset: start, text: rem });
-        if (rep.length)  sl.apply({ type: "insert_text", path, offset: start, text: rep });
+        if (rep.length) sl.apply({ type: "insert_text", path, offset: start, text: rep });
         sl.selection = {
             anchor: { path: [...path], offset: ss },
             focus:  { path: [...path], offset: se },
         };
+        Logger.info(PLUGIN_NAME, `_put: done`);
     }
 
     _wrapState(text, start, end, L, R) {
