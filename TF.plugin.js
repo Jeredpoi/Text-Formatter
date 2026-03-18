@@ -1,7 +1,7 @@
 /**
  * @name TFExtra
  * @description Встраивает ANSI-цвета (текст и фон), заголовки H1–H3, подчёркивание, списки, код-блок и другое кастомное форматирование в попап Discord.
- * @version 5.1.7
+ * @version 5.1.8
  * @author TF / Zerebos base
  */
 
@@ -26,7 +26,7 @@
 
 const { Patcher, DOM, ReactUtils, Webpack, Logger, Data } = BdApi;
 const PLUGIN_NAME = "TFExtra";
-const VERSION     = "5.1.7";
+const VERSION     = "5.1.8";
 
 // Попап форматирования Discord при выделении текста использует класс buttons_XXXXX
 // Но такой же класс есть и в панели снизу — различаем по наличию нативных кнопок Discord внутри
@@ -64,6 +64,8 @@ const BTNS = [
     { id:"smallText",  type:"lineprefix", prefix:"-# ",      label:"-#",      labelStyle:"font-size:11px;font-weight:700;",                                                title:"Маленький текст",         hotkey:null,                             defaultVisible:true },
     { id:"list",       type:"lineprefix", prefix:"- ",       label:"•",       labelStyle:"font-size:14px;font-weight:700;",                                                title:"Список",                  hotkey:null,                             defaultVisible:true },
     { id:"numList",    type:"numbered",                      label:"1.",      labelStyle:"font-size:12px;font-weight:700;",                                                title:"Нумерованный список",     hotkey:null,                             defaultVisible:true },
+    { id:"quote",      type:"lineprefix", prefix:"> ",       label:">",       labelStyle:"font-size:13px;font-weight:700;",                                                title:"Цитата",                  hotkey:null,                             defaultVisible:true },
+    { id:"multiQuote", type:"lineprefix", prefix:">>> ",     label:"»»»",     labelStyle:"font-size:10px;font-weight:700;letter-spacing:-1px;",                             title:"Многострочная цитата",    hotkey:null,                             defaultVisible:true },
     { id:"codeblock",  type:"wrap",  wrap:["```\n","\n```"], label:"</>",     labelStyle:"font-family:monospace;font-weight:700;font-size:11px;letter-spacing:-0.5px;",   title:"Код-блок",                hotkey:{ctrl:true,shift:true,key:"K"},   defaultVisible:true },
     // ── Утилиты ────────────────────────────────────────────────────────────
     { id:"hyperlink",  type:"link",                          label:"🔗",      labelStyle:"font-size:13px;",                                                                title:"Гиперссылка",             hotkey:{ctrl:true,shift:true,key:"L"},   defaultVisible:true },
