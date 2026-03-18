@@ -1,7 +1,7 @@
 /**
  * @name TFExtra
  * @description Встраивает ANSI-цвета (текст и фон), заголовки H1–H3, подчёркивание, списки, код-блок и другое кастомное форматирование в попап Discord.
- * @version 5.1.5
+ * @version 5.1.7
  * @author TF / Zerebos base
  */
 
@@ -26,7 +26,7 @@
 
 const { Patcher, DOM, ReactUtils, Webpack, Logger, Data } = BdApi;
 const PLUGIN_NAME = "TFExtra";
-const VERSION     = "5.1.6";
+const VERSION     = "5.1.7";
 
 // Попап форматирования Discord при выделении текста использует класс buttons_XXXXX
 // Но такой же класс есть и в панели снизу — различаем по наличию нативных кнопок Discord внутри
@@ -498,7 +498,6 @@ module.exports = class TFExtra {
             return;
         }
         this._replaceRangeText((selected) => strip(selected));
-        this._clearSlateSelection();
         Logger.info(PLUGIN_NAME, `_reset: done via replaceRangeText`);
     }
 
@@ -622,7 +621,6 @@ module.exports = class TFExtra {
             return;
         }
         this._replaceRangeText((selected) => strip(selected));
-        this._clearSlateSelection();
         Logger.info(PLUGIN_NAME, `_clearAll: done via replaceRangeText`);
     }
 
@@ -656,7 +654,6 @@ module.exports = class TFExtra {
                 }
                 return L + selected + R;
             });
-            this._clearSlateSelection();
             return;
         }
 
@@ -704,7 +701,6 @@ module.exports = class TFExtra {
             this._saveSel(); return;
         }
         this._replaceRangeText(toggle);
-        this._clearSlateSelection();
         Logger.info(PLUGIN_NAME, `_linePrefix: done via replaceRangeText`);
     }
 
@@ -737,7 +733,6 @@ module.exports = class TFExtra {
             this._saveSel(); return;
         }
         this._replaceRangeText(toggle);
-        this._clearSlateSelection();
         Logger.info(PLUGIN_NAME, `_numbered: done via replaceRangeText`);
     }
 
@@ -993,8 +988,29 @@ module.exports = class TFExtra {
             Logger.info(PLUGIN_NAME, `_replaceRangeText: noop (rep===selected)`);
             return;
         }
-        Logger.info(PLUGIN_NAME, `_replaceRangeText: execCommand "${selected.slice(0, 40)}" → "${rep.slice(0, 40)}"`);
+        // Используем ClipboardEvent('paste') вместо execCommand("insertText").
+        // execCommand с \n создаёт <div> в DOM, которые Slate не может смаппить
+        // на свои ноды → "Cannot resolve a Slate node from DOM node".
+        // Paste-событие обрабатывается самим Slate: он правильно разбивает \n
+        // на параграфы и не рассинхронизирует DOM ↔ Slate-модель.
+        const ta = this._ta();
+        if (ta) {
+            try {
+                Logger.info(PLUGIN_NAME, `_replaceRangeText: paste "${selected.slice(0, 40)}" → "${rep.slice(0, 40)}"`);
+                const dt = new DataTransfer();
+                dt.setData("text/plain", rep);
+                const pasteEvent = new ClipboardEvent("paste", { bubbles: true, cancelable: true, clipboardData: dt });
+                const handled = !ta.dispatchEvent(pasteEvent); // false = preventDefault вызван = Slate обработал
+                Logger.info(PLUGIN_NAME, `_replaceRangeText: paste handled=${handled}`);
+                if (handled) return;
+            } catch (err) {
+                Logger.info(PLUGIN_NAME, `_replaceRangeText: paste error: ${err?.message}`);
+            }
+        }
+        // Fallback: execCommand (если paste не обработан)
+        Logger.info(PLUGIN_NAME, `_replaceRangeText: execCommand fallback "${selected.slice(0, 40)}" → "${rep.slice(0, 40)}"`);
         document.execCommand("insertText", false, rep);
+        this._clearSlateSelection();
     }
 
     _replaceOnSlate(transformFn) {
