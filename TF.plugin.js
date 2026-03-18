@@ -26,7 +26,7 @@
 
 const { Patcher, DOM, ReactUtils, Webpack, Logger, Data } = BdApi;
 const PLUGIN_NAME = "TFExtra";
-const VERSION     = "5.1.5";
+const VERSION     = "5.1.6";
 
 // Попап форматирования Discord при выделении текста использует класс buttons_XXXXX
 // Но такой же класс есть и в панели снизу — различаем по наличию нативных кнопок Discord внутри
@@ -398,7 +398,7 @@ module.exports = class TFExtra {
         el.draggable = false;
         // Если метка начинается с '<' — вставляем как HTML (цветные свотчи),
         // иначе как безопасный textContent.
-        if (typeof btn.label === "string" && btn.label.trimStart().startsWith("<")) {
+        if (typeof btn.label === "string" && /^<[a-zA-Z]/.test(btn.label.trimStart())) {
             el.innerHTML = btn.label;
         } else {
             el.textContent = btn.label;
@@ -498,6 +498,7 @@ module.exports = class TFExtra {
             return;
         }
         this._replaceRangeText((selected) => strip(selected));
+        this._clearSlateSelection();
         Logger.info(PLUGIN_NAME, `_reset: done via replaceRangeText`);
     }
 
@@ -621,6 +622,7 @@ module.exports = class TFExtra {
             return;
         }
         this._replaceRangeText((selected) => strip(selected));
+        this._clearSlateSelection();
         Logger.info(PLUGIN_NAME, `_clearAll: done via replaceRangeText`);
     }
 
@@ -654,6 +656,7 @@ module.exports = class TFExtra {
                 }
                 return L + selected + R;
             });
+            this._clearSlateSelection();
             return;
         }
 
@@ -701,6 +704,7 @@ module.exports = class TFExtra {
             this._saveSel(); return;
         }
         this._replaceRangeText(toggle);
+        this._clearSlateSelection();
         Logger.info(PLUGIN_NAME, `_linePrefix: done via replaceRangeText`);
     }
 
@@ -733,6 +737,7 @@ module.exports = class TFExtra {
             this._saveSel(); return;
         }
         this._replaceRangeText(toggle);
+        this._clearSlateSelection();
         Logger.info(PLUGIN_NAME, `_numbered: done via replaceRangeText`);
     }
 
@@ -964,6 +969,15 @@ module.exports = class TFExtra {
         const sel = window.getSelection();
         if (sel?.rangeCount && !sel.isCollapsed) return sel.toString();
         return "";
+    }
+
+    // После execCommand-операций Slate сохраняет старый sl.selection (устаревший).
+    // При ре-рендере React он пытается разрешить DOM-точки по этим old-офсетам
+    // → "Cannot resolve a DOM point from Slate point" / "removeChild" ошибки.
+    // Обнуляем selection → Slate не пытается навигировать к невалидным координатам.
+    _clearSlateSelection() {
+        const sl = this._snap?.sl;
+        if (sl) { try { sl.selection = null; } catch (_) {} }
     }
 
     _replaceRangeText(transformFn) {
