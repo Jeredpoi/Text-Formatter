@@ -1,7 +1,7 @@
 /**
  * @name TFExtra
  * @description Встраивает ANSI-цвета (текст и фон), заголовки H1–H3, подчёркивание, списки, код-блок и другое кастомное форматирование в попап Discord.
- * @version 5.1.8
+ * @version 5.1.9
  * @author TF / Zerebos base
  */
 
@@ -26,7 +26,7 @@
 
 const { Patcher, DOM, ReactUtils, Webpack, Logger, Data } = BdApi;
 const PLUGIN_NAME = "TFExtra";
-const VERSION     = "5.1.8";
+const VERSION     = "5.1.9";
 
 // Попап форматирования Discord при выделении текста использует класс buttons_XXXXX
 // Но такой же класс есть и в панели снизу — различаем по наличию нативных кнопок Discord внутри
@@ -336,7 +336,8 @@ module.exports = class TFExtra {
 
         // Только плавающий попап выделения, а не нижняя панель ввода.
         if (el.closest("form,[class*='channelTextArea'],[class*='textArea_']")) return skip("inside composer");
-        if (btnCount < 4 || btnCount > 16) return skip("button count");
+        // FIX: поднят верхний лимит с 16 до 24 — Discord периодически добавляет новые кнопки
+        if (btnCount < 4 || btnCount > 24) return skip("button count");
         if (!inLayer) return skip("not in layer");
         if (!hasKnownFormatting && svgBtnCount < 3) return skip("no formatting markers");
 
@@ -514,12 +515,13 @@ module.exports = class TFExtra {
         let snapState = null;
 
         if (ta.tagName !== "TEXTAREA") {
-            const sn = ReactUtils.getOwnerInstance(ta);
-            const sl = sn?.ref?.current?.getSlateEditor();
+            // FIX: используем _getSlate() вместо устаревшего ReactUtils.getOwnerInstance,
+            // чтобы задействовать все fallback-методы (fiber walk и др.)
+            const sl = this._getSlate(ta);
             const info = this._slateInfo(sl, this._snap?.slateSel ?? sl?.selection);
             if (info) {
                 selectedText = info.text.slice(info.start, info.end);
-                slateState = { sl, sn, info };
+                slateState = { sl, info };
             } else {
                 selectedText = this._getSelectedText();
             }
@@ -556,9 +558,9 @@ module.exports = class TFExtra {
                 const rep = `[${selectedText}](${url})`;
                 Logger.info(PLUGIN_NAME, `_link: inserting rep="${rep.slice(0, 60)}"`);
                 if (slateState) {
-                    const { sl, sn, info } = slateState;
+                    const { sl, info } = slateState;
                     this._put(sl, info.path, info.start, info.end, rep, info.start, info.start + rep.length);
-                    sn?.focus?.();
+                    ta.focus();
                 } else if (snapState) {
                     ta.focus();
                     ta.setSelectionRange(snapState.start, snapState.end);
@@ -597,6 +599,8 @@ module.exports = class TFExtra {
             r = r.replace(/~~([\s\S]+?)~~/g, "$1");
             // Спойлер
             r = r.replace(/\|\|([\s\S]+?)\|\|/g, "$1");
+            // Гиперссылки [текст](url)
+            r = r.replace(/\[([^\]]*?)\]\([^)]*?\)/g, "$1");
             // Многострочная цитата
             r = r.replace(/^>>> /gm, "");
             // Одиночная цитата
@@ -686,7 +690,9 @@ module.exports = class TFExtra {
             const all = nonEmpty.length > 0 && nonEmpty.every(l => l.startsWith(prefix));
             return all
                 ? lines.map(l => l === "" ? l : l.slice(prefix.length)).join("\n")
-                : lines.map(l => l === "" ? l : prefix + l).join("\n");
+                // FIX: при добавлении префикса пропускаем строки, у которых он уже есть,
+                // иначе получится двойной префикс (# # Заголовок, > > Цитата и т.д.)
+                : lines.map(l => l === "" ? l : (l.startsWith(prefix) ? l : prefix + l)).join("\n");
         };
         const doneSlate = this._replaceOnSlate((selected) => toggle(selected));
         if (doneSlate) { Logger.info(PLUGIN_NAME, `_linePrefix: done via slate`); return; }
@@ -718,7 +724,9 @@ module.exports = class TFExtra {
                 return lines.map(l => l.replace(/^\d+\.\s/, "")).join("\n");
             }
             let counter = 1;
-            return lines.map(l => l.trim() === "" ? l : `${counter++}. ${l}`).join("\n");
+            // FIX: при добавлении номеров сначала снимаем уже существующие,
+            // иначе частично пронумерованные строки получают двойной номер (1. 1. текст)
+            return lines.map(l => l.trim() === "" ? l : `${counter++}. ${l.replace(/^\d+\.\s/, "")}`).join("\n");
         };
         const doneSlate = this._replaceOnSlate((selected) => toggle(selected));
         if (doneSlate) { Logger.info(PLUGIN_NAME, `_numbered: done via slate`); return; }
